@@ -4,11 +4,13 @@ import structlog
 from fastapi import FastAPI, HTTPException
 
 from agents.editor.graph import build_graph
+from agents.editor.spawn import router as spawn_router
 from agents.shared.base_agent import register_journalist
 from agents.shared.state import EditorState, JournalistConfig
 from google.cloud import firestore
 
 app = FastAPI(title="glass-record-editor", version="0.1.0")
+app.include_router(spawn_router)
 log = structlog.get_logger()
 
 

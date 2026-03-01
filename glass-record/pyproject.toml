@@ -15,6 +15,7 @@ dependencies = [
     "google-cloud-firestore>=2.23",
     "google-cloud-storage>=2.16",
     "google-cloud-pubsub>=2.21",
+    "google-cloud-scheduler>=2.13",
 
     # Web browsing / search
     "browser-use>=0.1",
