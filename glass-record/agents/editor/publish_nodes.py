@@ -7,6 +7,7 @@ from google.cloud import firestore
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
+from agents.editor.events import emit
 from agents.editor.publish_prompts import STORY_SYNTHESIS_PROMPT
 from agents.legal_tree.nodes import build_legal_tree
 from agents.shared.base_agent import get_journalist_doc, log_action
@@ -15,6 +16,24 @@ from agents.shared.state import EditorState
 from cms.ghost import GhostClient
 
 log = structlog.get_logger()
+
+
+async def _set_cycle_status(
+    db: firestore.AsyncClient,
+    journalist_id: str,
+    status: str,
+    cycle_id: str = "",
+    extra: dict | None = None,
+) -> None:
+    doc = {
+        "status": status,
+        "cycle_id": cycle_id,
+        "updated_at": datetime.datetime.utcnow().isoformat(),
+        **(extra or {}),
+    }
+    await db.collection("journalists").document(journalist_id).update(
+        {"cycle_status": doc}
+    )
 
 
 class ArticleDraft(BaseModel):
@@ -71,8 +90,16 @@ async def synthesise_and_publish(state: EditorState) -> dict:
     db = firestore.AsyncClient()
     journalist_doc = await get_journalist_doc(db, journalist_id)
 
+    emit(journalist_id, "building_legal_tree", {"cycle_id": cycle_id})
+    await _set_cycle_status(db, journalist_id, "building_legal_tree", cycle_id)
+
     # Build legal tree
     tree = await build_legal_tree(journalist_id, cycle_id, story_title)
+    emit(journalist_id, "legal_tree_ready", {
+        "tree_id": tree.tree_id,
+        "strength": tree.overall_strength,
+        "root_nodes": len(tree.root_nodes),
+    })
     legal_summary_lines = [f"Summary: {tree.summary}"]
     for node in tree.root_nodes:
         legal_summary_lines.append(
@@ -140,6 +167,14 @@ async def synthesise_and_publish(state: EditorState) -> dict:
         "ghost_url": ghost_url,
         "headline": draft.headline,
     })
+    emit(journalist_id, "story_published", {
+        "headline": draft.headline,
+        "ghost_url": ghost_url,
+        "cycle_id": cycle_id,
+    })
+    await _set_cycle_status(db, journalist_id, "idle", cycle_id,
+                            {"last_published": draft.headline, "last_url": ghost_url})
+
     log.info("story_published", journalist_id=journalist_id,
              ghost_post_id=ghost_post_id, url=ghost_url)
 

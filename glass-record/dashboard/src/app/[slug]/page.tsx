@@ -9,6 +9,7 @@ import {
   subscribeToComplianceLog,
   subscribeToStories,
 } from "@/lib/firebase";
+import { useSSE } from "@/lib/useSSE";
 
 interface TabProps {
   label: string;
@@ -43,7 +44,7 @@ function Badge({ value, max = 1 }: { value: number; max?: number }) {
   );
 }
 
-type Tab = "mandate" | "activity" | "evidence" | "compliance" | "stories";
+type Tab = "mandate" | "activity" | "evidence" | "compliance" | "stories" | "live";
 
 export default function JournalistPage({
   params,
@@ -57,6 +58,9 @@ export default function JournalistPage({
   const [compliance, setCompliance] = useState<Record<string, unknown>[]>([]);
   const [stories, setStories] = useState<Record<string, unknown>[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("mandate");
+
+  // SSE: real-time cycle events from the Editor service
+  const { events: sseEvents, status: sseStatus, connected } = useSSE(slug);
 
   useEffect(() => {
     const unsubs = [
@@ -90,8 +94,27 @@ export default function JournalistPage({
         <p className="text-xs text-gray-400 mt-2">ID: {slug}</p>
       </div>
 
+      {/* Live status bar */}
+      <div className="flex items-center gap-3 mb-6 text-xs">
+        <span
+          className={`inline-block w-2 h-2 rounded-full ${
+            connected
+              ? sseStatus === "Idle" || sseStatus === "idle"
+                ? "bg-gray-300"
+                : "bg-green-400 animate-pulse"
+              : "bg-gray-200"
+          }`}
+        />
+        <span className="text-gray-500">
+          {connected ? sseStatus : "Connecting to live stream…"}
+        </span>
+        {connected && (
+          <span className="text-gray-300 ml-auto">SSE connected</span>
+        )}
+      </div>
+
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-100 mb-8">
+      <div className="flex gap-1 border-b border-gray-100 mb-8 flex-wrap">
         {(
           [
             ["mandate", "Mandate"],
@@ -99,6 +122,7 @@ export default function JournalistPage({
             ["evidence", `Evidence (${evidence.length})`],
             ["compliance", `Compliance (${compliance.length})`],
             ["stories", `Stories (${stories.length})`],
+            ["live", `Live${sseEvents.length ? ` (${sseEvents.length})` : ""}`],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <Tab
@@ -226,6 +250,34 @@ export default function JournalistPage({
                   ))}
                 </ul>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Live SSE Event Feed */}
+      {activeTab === "live" && (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400 mb-4">
+            Real-time events streamed directly from the Editor agent during active
+            investigation cycles. Updates appear here before they are written to
+            Firestore.
+          </p>
+          {sseEvents.length === 0 && (
+            <Empty text={connected ? "Waiting for next cycle…" : "Connecting…"} />
+          )}
+          {sseEvents.map((ev, i) => (
+            <div
+              key={i}
+              className="border border-gray-100 rounded px-4 py-3 text-xs font-mono"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-semibold text-gray-700">{ev.event}</span>
+                <span className="text-gray-300">{ev.ts}</span>
+              </div>
+              <pre className="text-gray-400 whitespace-pre-wrap overflow-x-auto">
+                {JSON.stringify(ev.data, null, 2)}
+              </pre>
             </div>
           ))}
         </div>

@@ -8,12 +8,34 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Send
 from pydantic import BaseModel
 
+from agents.editor.events import emit
 from agents.shared.base_agent import get_journalist_doc, log_action
 from agents.shared.gemini import get_llm
 from agents.shared.state import EditorState, ResearcherState
 from agents.editor.prompts import DECOMPOSE_MANDATE_PROMPT, STORY_SELECTION_PROMPT
 
 log = structlog.get_logger()
+
+
+async def _set_cycle_status(
+    db: firestore.AsyncClient,
+    journalist_id: str,
+    status: str,
+    cycle_id: str = "",
+    extra: dict | None = None,
+) -> None:
+    """Write the journalist's current cycle status to Firestore for dashboard polling."""
+    doc = {
+        "status": status,
+        "cycle_id": cycle_id,
+        "updated_at": datetime.datetime.utcnow().isoformat(),
+        **(extra or {}),
+    }
+    await (
+        db.collection("journalists")
+        .document(journalist_id)
+        .update({"cycle_status": doc})
+    )
 
 
 class StorySelection(BaseModel):
@@ -24,23 +46,30 @@ class StorySelection(BaseModel):
 
 
 async def select_story(state: EditorState) -> dict:
+    journalist_id = state["config"].journalist_id
+    cycle_id = state["cycle_id"]
     db = firestore.AsyncClient()
 
+    emit(journalist_id, "cycle_start", {"cycle_id": cycle_id})
+    await _set_cycle_status(db, journalist_id, "selecting_story", cycle_id)
+
     # Always load mandate from Firestore — never trust the request payload
-    journalist_doc = await get_journalist_doc(db, state["config"].journalist_id)
+    journalist_doc = await get_journalist_doc(db, journalist_id)
     mandate = journalist_doc["mandate"]
     jurisdiction = journalist_doc["jurisdiction"]
 
     # Fetch previous story titles to avoid repetition
     stories_ref = (
         db.collection("journalists")
-        .document(state["config"].journalist_id)
+        .document(journalist_id)
         .collection("stories")
         .order_by("published_at", direction=firestore.Query.DESCENDING)
         .limit(10)
     )
     previous_stories_snap = await stories_ref.get()
     previous_stories = [s.to_dict().get("title", "") for s in previous_stories_snap]
+
+    emit(journalist_id, "llm_call", {"step": "select_story", "model": "gemini"})
 
     llm = get_llm(temperature=0.3).with_structured_output(StorySelection)
     prompt = STORY_SELECTION_PROMPT.format(
@@ -51,13 +80,15 @@ async def select_story(state: EditorState) -> dict:
     )
     story: StorySelection = await llm.ainvoke([HumanMessage(content=prompt)])
 
-    await log_action(
-        db,
-        state["config"].journalist_id,
-        state["cycle_id"],
-        "story_selected",
-        story.model_dump(),
-    )
+    await log_action(db, journalist_id, cycle_id, "story_selected", story.model_dump())
+    emit(journalist_id, "story_selected", {
+        "title": story.story_title,
+        "urgency_score": story.urgency_score,
+        "cycle_id": cycle_id,
+    })
+    await _set_cycle_status(db, journalist_id, "story_selected", cycle_id,
+                            {"story_title": story.story_title})
+
     log.info("story_selected", title=story.story_title, urgency=story.urgency_score)
     return {
         "selected_story": story.story_title,
@@ -66,26 +97,34 @@ async def select_story(state: EditorState) -> dict:
 
 
 async def decompose_mandate(state: EditorState) -> dict:
+    journalist_id = state["config"].journalist_id
+    cycle_id = state["cycle_id"]
     db = firestore.AsyncClient()
-    journalist_doc = await get_journalist_doc(db, state["config"].journalist_id)
+
+    emit(journalist_id, "llm_call", {"step": "decompose_mandate", "model": "gemini"})
+    await _set_cycle_status(db, journalist_id, "decomposing_mandate", cycle_id)
+
+    journalist_doc = await get_journalist_doc(db, journalist_id)
 
     llm = get_llm(temperature=0.1)
     prompt = DECOMPOSE_MANDATE_PROMPT.format(
         story_title=state["selected_story"],
-        story_summary="",  # populated by select_story in future via state
+        story_summary="",
         mandate=journalist_doc["mandate"],
         jurisdiction=journalist_doc["jurisdiction"],
     )
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     sub_questions: list[str] = json.loads(response.content)
 
-    await log_action(
-        db,
-        state["config"].journalist_id,
-        state["cycle_id"],
-        "mandate_decomposed",
-        {"sub_questions": sub_questions, "count": len(sub_questions)},
-    )
+    await log_action(db, journalist_id, cycle_id, "mandate_decomposed",
+                     {"sub_questions": sub_questions, "count": len(sub_questions)})
+    emit(journalist_id, "mandate_decomposed", {
+        "sub_questions": sub_questions,
+        "count": len(sub_questions),
+    })
+    await _set_cycle_status(db, journalist_id, "researching", cycle_id,
+                            {"sub_question_count": len(sub_questions)})
+
     log.info("mandate_decomposed", count=len(sub_questions))
     return {"sub_questions": sub_questions}
 
@@ -96,6 +135,9 @@ def spawn_researchers(state: EditorState) -> list[Send]:
     In local mode, returns Send() calls for LangGraph subgraph execution.
     In pubsub mode, publishes to Pub/Sub and returns empty list (workers run independently).
     """
+    emit(state["config"].journalist_id, "researchers_spawned",
+         {"count": len(state["sub_questions"])})
+
     mode = os.environ.get("RESEARCHER_MODE", "local")
 
     if mode == "pubsub":
@@ -147,18 +189,22 @@ async def synthesise_results(state: EditorState) -> dict:
     from agents.compliance.graph import build_compliance_graph
     from agents.shared.state import ComplianceState
 
+    journalist_id = state["config"].journalist_id
+    cycle_id = state["cycle_id"]
     db = firestore.AsyncClient()
+
     total_evidence = sum(
         len(r.get("evidence_ids", [])) for r in state.get("researcher_results", [])
     )
-    await log_action(
-        db,
-        state["config"].journalist_id,
-        state["cycle_id"],
-        "results_synthesised",
-        {"researcher_count": len(state.get("researcher_results", [])), "evidence_count": total_evidence},
-    )
-    log.info("results_synthesised", evidence_count=total_evidence)
+    await log_action(db, journalist_id, cycle_id, "results_synthesised",
+                     {"researcher_count": len(state.get("researcher_results", [])),
+                      "evidence_count": total_evidence})
+    emit(journalist_id, "research_complete", {
+        "evidence_count": total_evidence,
+        "researcher_count": len(state.get("researcher_results", [])),
+    })
+    await _set_cycle_status(db, journalist_id, "compliance_check", cycle_id,
+                            {"evidence_count": total_evidence})
 
     # Run compliance check inline
     compliance_graph = build_compliance_graph()
@@ -168,17 +214,24 @@ async def synthesise_results(state: EditorState) -> dict:
         sub_questions=state["sub_questions"],
         passed=True,
         reasoning="",
-        cycle_id=state["cycle_id"],
+        cycle_id=cycle_id,
         messages=[],
     )
     compliance_result = await compliance_graph.ainvoke(compliance_state)
     passed = compliance_result.get("passed", False)
 
-    if not passed:
-        log.error(
-            "cycle_blocked_by_compliance",
-            journalist_id=state["config"].journalist_id,
-            reasoning=compliance_result.get("reasoning", ""),
-        )
+    emit(journalist_id, "compliance_result", {
+        "passed": passed,
+        "reasoning": compliance_result.get("reasoning", ""),
+    })
 
+    if not passed:
+        await _set_cycle_status(db, journalist_id, "idle", cycle_id,
+                                {"last_result": "compliance_failed"})
+        log.error("cycle_blocked_by_compliance", journalist_id=journalist_id,
+                  reasoning=compliance_result.get("reasoning", ""))
+    else:
+        await _set_cycle_status(db, journalist_id, "publishing", cycle_id)
+
+    log.info("results_synthesised", evidence_count=total_evidence)
     return {"compliance_passed": passed}
