@@ -140,7 +140,13 @@ def _publish_researcher_tasks(state: EditorState) -> None:
 
 
 async def synthesise_results(state: EditorState) -> dict:
-    """Aggregate researcher results. Compliance check wired in MVP 4."""
+    """
+    Aggregate researcher results, then run the Compliance Agent.
+    The cycle proceeds only if compliance passes.
+    """
+    from agents.compliance.graph import build_compliance_graph
+    from agents.shared.state import ComplianceState
+
     db = firestore.AsyncClient()
     total_evidence = sum(
         len(r.get("evidence_ids", [])) for r in state.get("researcher_results", [])
@@ -153,4 +159,26 @@ async def synthesise_results(state: EditorState) -> dict:
         {"researcher_count": len(state.get("researcher_results", [])), "evidence_count": total_evidence},
     )
     log.info("results_synthesised", evidence_count=total_evidence)
-    return {"compliance_passed": True}
+
+    # Run compliance check inline
+    compliance_graph = build_compliance_graph()
+    compliance_state = ComplianceState(
+        config=state["config"],
+        selected_story=state["selected_story"],
+        sub_questions=state["sub_questions"],
+        passed=True,
+        reasoning="",
+        cycle_id=state["cycle_id"],
+        messages=[],
+    )
+    compliance_result = await compliance_graph.ainvoke(compliance_state)
+    passed = compliance_result.get("passed", False)
+
+    if not passed:
+        log.error(
+            "cycle_blocked_by_compliance",
+            journalist_id=state["config"].journalist_id,
+            reasoning=compliance_result.get("reasoning", ""),
+        )
+
+    return {"compliance_passed": passed}
