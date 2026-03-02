@@ -32,9 +32,9 @@ def mock_llm():
 
 @pytest.fixture
 def mock_firestore_client():
-    """Return a mock Firestore AsyncClient."""
-    client = MagicMock()
-    client.collection.return_value.document.return_value.get = AsyncMock(
+    """Return a mock Firestore AsyncClient with all awaitable methods as AsyncMock."""
+    doc_mock = MagicMock()
+    doc_mock.get = AsyncMock(
         return_value=MagicMock(exists=True, to_dict=lambda: {
             "journalist_id": "test-journalist-001",
             "mandate": "Investigate human rights implications of UN Security Council decisions.",
@@ -42,5 +42,17 @@ def mock_firestore_client():
             "tier": "free",
         })
     )
-    client.collection.return_value.document.return_value.collection.return_value.add = AsyncMock()
+    doc_mock.set = AsyncMock()
+    doc_mock.update = AsyncMock()
+    doc_mock.collection.return_value.add = AsyncMock()
+    doc_mock.collection.return_value.document.return_value.set = AsyncMock()
+    doc_mock.collection.return_value.document.return_value.update = AsyncMock()
+    doc_mock.collection.return_value.document.return_value.get = AsyncMock(
+        return_value=MagicMock(exists=True, to_dict=lambda: {})
+    )
+
+    client = MagicMock()
+    client.collection.return_value.document.return_value = doc_mock
+    client.collection.return_value.add = AsyncMock()
     return client
+

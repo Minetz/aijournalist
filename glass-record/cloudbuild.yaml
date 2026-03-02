@@ -7,7 +7,7 @@ steps:
       - -c
       - |
         pip install uv --quiet
-        uv pip install --system -e ".[test]" --quiet
+        uv pip install --system -e ".[dev]" --quiet
         pytest tests/unit -x -q
     env:
       - FIRESTORE_EMULATOR_HOST=localhost:8080
