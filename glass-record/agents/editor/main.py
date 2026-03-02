@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from agents.editor.events import emit, subscribe
 from agents.editor.graph import build_graph
+from agents.editor.graph_api import router as graph_router
 from agents.editor.spawn import router as spawn_router
 from agents.shared.base_agent import register_journalist
 from agents.shared.cost import CostCallbackHandler
@@ -17,6 +18,7 @@ from google.cloud import firestore
 app = FastAPI(title="glass-record-editor", version="0.1.0")
 app.include_router(spawn_router)
 app.include_router(tips_router)
+app.include_router(graph_router)
 log = structlog.get_logger()
 
 

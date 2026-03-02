@@ -103,12 +103,34 @@ resource "google_project_iam_member" "agent_vertex" {
   member  = "serviceAccount:${google_service_account.agent_runner.email}"
 }
 
+# ── Cloud Storage: evidence locker ───────────────────────────────────────────
+
+resource "google_storage_bucket" "evidence" {
+  name                        = "glass-record-evidence-${var.env}"
+  location                    = var.region
+  uniform_bucket_level_access = true
+  force_destroy               = false
+
+  lifecycle_rule {
+    action { type = "SetStorageClass"; storage_class = "NEARLINE" }
+    condition { age = 90 }
+  }
+
+  versioning { enabled = true }
+}
+
+resource "google_storage_bucket_iam_member" "agent_evidence_rw" {
+  bucket = google_storage_bucket.evidence.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.agent_runner.email}"
+}
+
 locals {
   shared_env_vars = {
-    GOOGLE_CLOUD_PROJECT    = var.project_id
+    GOOGLE_CLOUD_PROJECT      = var.project_id
     GOOGLE_GENAI_USE_VERTEXAI = "true"
-    GEMINI_MODEL            = "gemini-1.5-pro-002"
-    GCS_EVIDENCE_BUCKET     = "glass-record-evidence-${var.env}"
-    PUBSUB_RESEARCHER_TOPIC = module.pubsub.researcher_topic_name
+    GEMINI_MODEL              = "gemini-1.5-pro-002"
+    GCS_EVIDENCE_BUCKET       = google_storage_bucket.evidence.name
+    PUBSUB_RESEARCHER_TOPIC   = module.pubsub.researcher_topic_name
   }
 }

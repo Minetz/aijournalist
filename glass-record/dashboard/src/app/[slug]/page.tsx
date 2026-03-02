@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { use } from "react";
+import dynamic from "next/dynamic";
 import {
   subscribeToJournalist,
   subscribeToActivityLog,
@@ -13,25 +14,48 @@ import {
 } from "@/lib/firebase";
 import { useSSE } from "@/lib/useSSE";
 
+// Canvas-based force graph — must be loaded client-side only
+const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
+  ssr: false,
+  loading: () => <p className="text-gray-400 text-sm">Loading graph engine…</p>,
+});
+
 type Tab =
   | "mandate"
   | "activity"
   | "evidence"
+  | "graph"
   | "compliance"
   | "stories"
   | "cost"
   | "tips"
   | "live";
 
-function TabBtn({
-  label,
-  active,
-  onClick,
-}: {
+interface GraphNode {
+  id: number;
   label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+  group: number;
+}
+interface GraphLink {
+  source: number;
+  target: number;
+  label: string;
+}
+interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+const NODE_COLORS: Record<number, string> = {
+  0: "#111827", // Journalist — near-black
+  1: "#3b82f6", // Story — blue
+  2: "#10b981", // Evidence — green
+  3: "#f59e0b", // Entity — amber
+  4: "#8b5cf6", // Claim — purple
+  5: "#6b7280", // other — gray
+};
+
+function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -83,7 +107,16 @@ export default function JournalistPage({
   const [tipSubmitting, setTipSubmitting] = useState(false);
   const [tipSent, setTipSent] = useState(false);
 
+  // Knowledge graph
+  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
+  const graphContainerRef = useRef<HTMLDivElement>(null);
+  const [graphDims, setGraphDims] = useState({ width: 800, height: 500 });
+
   const { events: sseEvents, status: sseStatus, connected } = useSSE(slug);
+
+  const EDITOR_URL = process.env.NEXT_PUBLIC_EDITOR_URL ?? "http://localhost:8000";
 
   useEffect(() => {
     const unsubs = [
@@ -98,13 +131,55 @@ export default function JournalistPage({
     return () => unsubs.forEach((u) => u());
   }, [slug]);
 
-  const totalCostUsd = costs.reduce(
-    (sum, c) => sum + ((c.cost_usd as number) ?? 0),
-    0,
+  // Fetch graph data when graph tab is activated
+  useEffect(() => {
+    if (activeTab !== "graph") return;
+    setGraphLoading(true);
+    setGraphError(null);
+    fetch(`${EDITOR_URL}/graph/${slug}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((data: GraphData) => setGraphData(data))
+      .catch((e: Error) => setGraphError(e.message))
+      .finally(() => setGraphLoading(false));
+  }, [activeTab, slug, EDITOR_URL]);
+
+  // Measure container width for the force graph canvas
+  useEffect(() => {
+    if (!graphContainerRef.current) return;
+    const obs = new ResizeObserver((entries) => {
+      const { width } = entries[0].contentRect;
+      setGraphDims({ width, height: Math.max(400, width * 0.6) });
+    });
+    obs.observe(graphContainerRef.current);
+    return () => obs.disconnect();
+  }, [activeTab]);
+
+  const nodeCanvasObject = useCallback(
+    (node: GraphNode & { x?: number; y?: number }, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const r = Math.max(4, 6 / globalScale);
+      ctx.beginPath();
+      ctx.arc(node.x ?? 0, node.y ?? 0, r, 0, 2 * Math.PI);
+      ctx.fillStyle = NODE_COLORS[node.group] ?? NODE_COLORS[5];
+      ctx.fill();
+
+      const fontSize = Math.max(8, 10 / globalScale);
+      ctx.font = `${fontSize}px monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#374151";
+      ctx.fillText(
+        node.label.length > 20 ? node.label.slice(0, 18) + "…" : node.label,
+        node.x ?? 0,
+        (node.y ?? 0) + r + fontSize,
+      );
+    },
+    [],
   );
 
-  const EDITOR_URL =
-    process.env.NEXT_PUBLIC_EDITOR_URL ?? "http://localhost:8000";
+  const totalCostUsd = costs.reduce((sum, c) => sum + ((c.cost_usd as number) ?? 0), 0);
 
   async function submitTip(e: React.FormEvent) {
     e.preventDefault();
@@ -135,6 +210,7 @@ export default function JournalistPage({
     ["mandate", "Mandate"],
     ["activity", `Activity (${activity.length})`],
     ["evidence", `Evidence (${evidence.length})`],
+    ["graph", "Knowledge Graph"],
     ["compliance", `Compliance (${compliance.length})`],
     ["stories", `Stories (${stories.length})`],
     ["cost", `Cost ($${totalCostUsd.toFixed(4)})`],
@@ -186,7 +262,7 @@ export default function JournalistPage({
         ))}
       </div>
 
-      {/* ── Mandate ─────────────────────────────────────────────────────── */}
+      {/* ── Mandate ──────────────────────────────────────────────────────── */}
       {activeTab === "mandate" && (
         <div className="space-y-6">
           <Section title="Mandate">
@@ -261,9 +337,9 @@ export default function JournalistPage({
                   ))}
                 </ul>
               )}
-              {(item.entities as {name: string; type: string}[])?.length > 0 && (
+              {(item.entities as { name: string; type: string }[])?.length > 0 && (
                 <div className="flex gap-1 mt-2 flex-wrap">
-                  {(item.entities as {name: string; type: string}[]).map((e, i) => (
+                  {(item.entities as { name: string; type: string }[]).map((e, i) => (
                     <span key={i} className="text-xs bg-gray-50 border border-gray-100 px-2 py-0.5 rounded">
                       {e.name} <span className="text-gray-300">·{e.type}</span>
                     </span>
@@ -272,6 +348,75 @@ export default function JournalistPage({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Knowledge Graph ───────────────────────────────────────────────── */}
+      {activeTab === "graph" && (
+        <div>
+          {/* Legend */}
+          <div className="flex flex-wrap gap-4 mb-4 text-xs text-gray-500">
+            {[
+              ["Journalist", 0],
+              ["Story", 1],
+              ["Evidence", 2],
+              ["Entity", 3],
+              ["Claim", 4],
+            ].map(([label, group]) => (
+              <span key={label as string} className="flex items-center gap-1.5">
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full"
+                  style={{ background: NODE_COLORS[group as number] }}
+                />
+                {label as string}
+              </span>
+            ))}
+          </div>
+
+          {graphLoading && <p className="text-gray-400 text-sm">Fetching graph from Neo4j…</p>}
+          {graphError && (
+            <p className="text-red-400 text-sm">
+              Neo4j unavailable: {graphError}. Run the investigation cycle first to populate the graph.
+            </p>
+          )}
+
+          {!graphLoading && !graphError && graphData.nodes.length === 0 && (
+            <Empty text="No graph data yet — run an investigation cycle to populate the knowledge graph." />
+          )}
+
+          {!graphLoading && !graphError && graphData.nodes.length > 0 && (
+            <div
+              ref={graphContainerRef}
+              className="border border-gray-100 rounded overflow-hidden bg-gray-50"
+              style={{ height: graphDims.height }}
+            >
+              <ForceGraph2D
+                graphData={graphData}
+                width={graphDims.width}
+                height={graphDims.height}
+                backgroundColor="#f9fafb"
+                linkLabel="label"
+                linkColor={() => "#d1d5db"}
+                linkDirectionalArrowLength={4}
+                linkDirectionalArrowRelPos={1}
+                nodeCanvasObject={nodeCanvasObject as Parameters<typeof ForceGraph2D>[0]["nodeCanvasObject"]}
+                nodePointerAreaPaint={(node: GraphNode & { x?: number; y?: number }, color, ctx) => {
+                  ctx.fillStyle = color;
+                  ctx.beginPath();
+                  ctx.arc(node.x ?? 0, node.y ?? 0, 8, 0, 2 * Math.PI);
+                  ctx.fill();
+                }}
+                enableNodeDrag
+                cooldownTicks={80}
+              />
+            </div>
+          )}
+
+          {!graphLoading && (
+            <p className="text-xs text-gray-300 mt-2">
+              {graphData.nodes.length} nodes · {graphData.links.length} relationships
+            </p>
+          )}
         </div>
       )}
 
@@ -337,7 +482,10 @@ export default function JournalistPage({
             {([
               ["Total spend", `$${totalCostUsd.toFixed(4)}`],
               ["Cycles", String(costs.length)],
-              ["Total tokens", costs.reduce((s, c) => s + ((c.total_tokens as number) ?? 0), 0).toLocaleString()],
+              [
+                "Total tokens",
+                costs.reduce((s, c) => s + ((c.total_tokens as number) ?? 0), 0).toLocaleString(),
+              ],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} className="border border-gray-100 rounded p-4">
                 <p className="text-xs text-gray-400 mb-1">{label}</p>
@@ -403,11 +551,13 @@ export default function JournalistPage({
                 <p className="text-gray-700 mb-2">{tip.content as string}</p>
                 <p className="text-gray-300">{tip.submitted_at as string}</p>
                 {tip.verification && (
-                  <div className={`mt-3 pt-3 border-t text-xs ${
-                    (tip.verification as Record<string, unknown>).corroborated
-                      ? "border-green-100 text-green-700"
-                      : "border-gray-100 text-gray-500"
-                  }`}>
+                  <div
+                    className={`mt-3 pt-3 border-t text-xs ${
+                      (tip.verification as Record<string, unknown>).corroborated
+                        ? "border-green-100 text-green-700"
+                        : "border-gray-100 text-gray-500"
+                    }`}
+                  >
                     <p className="font-medium mb-1">
                       {(tip.verification as Record<string, unknown>).corroborated
                         ? "Corroborated by evidence"

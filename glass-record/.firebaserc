@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "glass-record-prod",
+    "dev": "glass-record-dev"
+  },
+  "targets": {},
+  "etags": {}
+}
