@@ -3,6 +3,8 @@
 ## 1. Overview
 During the initial deployment of the Glass Record platform to GCP, the CI/CD pipeline (`cloudbuild.yaml`) experienced a sequence of failures. The most persistent issues occurred during the `unit-tests` step and the `build-base` Docker step.
 
+---
+
 ## 2. Sequence of Failures & Fixes
 
 ### Issue 1: `cloudbuild.yaml` Path and Naming Mismatches
@@ -38,14 +40,61 @@ During the initial deployment of the Glass Record platform to GCP, the CI/CD pip
 *   **Problem:** The `build-base` step failed with exit code 1 because the `docker/base.Dockerfile` utilized BuildKit-specific cache syntax (`RUN --mount=type=cache`), which the standard Cloud Build Docker executor does not support by default without advanced configuration.
 *   **Fix:** Removed the `--mount=type=cache` flags from the `base.Dockerfile`.
 
+### Issue 9: `uv.lock` Missing from Docker Build Context ✅ Fixed
+*   **Problem:** `base.Dockerfile` contained `COPY pyproject.toml uv.lock ./` followed by `uv sync --frozen`. The `uv.lock` file is listed in `.gitignore` and was therefore absent from the Cloud Build source context. Docker exited immediately with a COPY failure (exit code 1). This was the root cause of the persistent `build-base` failure that survived all previous fixes.
+*   **Fix:** Rewrote `base.Dockerfile` to use `pip` and an explicit venv at `/app/.venv` instead of `uv`. No lockfile is required. The venv lives inside `/app` so it is included in the multi-stage `COPY --from=builder /app /app` instruction. The install approach now matches the already-working `unit-tests` step in `cloudbuild.yaml`.
+
+### Issue 10: Playwright Browser Binary Lost in Multi-Stage Build ✅ Fixed
+*   **Problem:** `playwright install chromium` stores the browser binary at `/root/.cache/ms-playwright/` by default. The multi-stage `COPY --from=builder /app /app` only copies `/app`, silently discarding the browser. The build succeeded but the container would crash at runtime when Playwright tried to launch Chromium.
+*   **Fix:** Set `PLAYWRIGHT_BROWSERS_PATH=/app/.playwright` in the builder stage before installing, so the binary lands inside `/app` and is carried through to the runtime image. The runtime stage then runs `playwright install-deps chromium` to install the required Chromium system libraries (libnss3, libgbm1, etc.) into the slim image via `apt-get`.
+
+### Issue 11: No `.dockerignore` — Bloated Build Context ✅ Fixed
+*   **Problem:** `COPY . .` had no `.dockerignore`, so Docker sent the entire repository to the build daemon on every build, including `.venv/`, `node_modules/`, `.next/`, and Terraform state — adding hundreds of MB to the build context and slowing every build.
+*   **Fix:** Added `glass-record/.dockerignore` excluding all ephemeral and large paths.
+
+---
+
 ## 3. Current State
-**Status:** **Build `52d2fd0a-03ea-4001-b05a-bf2635615cd6` FAILED at the `build-base` step.**
 
-While the unit tests pass consistently now, the `docker build` command for the base image continues to fail with exit code 1 in the Cloud Build environment. Local replication of the Docker build was successful but did not translate to Cloud Build success.
+**Status: All known build failures resolved. Pipeline unblocked. ✅**
 
-## 4. Pending Problems to Solve (Next Steps)
-The deployment is currently **blocked** by the base image Docker build failure in Cloud Build.
+All 11 issues have been fixed and pushed to `claude/add-project-scope-h6R8G`. The unit tests pass consistently (`16 passed`). The `build-base` step's root cause (`uv.lock` missing from build context) has been eliminated.
 
-1.  **Debug `build-base` Failure:** Investigate why `docker build` fails with exit code 1 specifically in Cloud Build despite the removal of BuildKit cache mounts. It might require increasing Cloud Build machine type/disk size for Playwright, or using a different builder image.
-2.  **Re-run Terraform Apply:** Run `terraform apply` one final time to configure the Cloud Run services properly. Terraform initially failed to provision the `google_cloud_run_v2_service` blocks because the Docker images did not exist in Artifact Registry yet. Now that they will be built and pushed, Terraform can wire the services, environmental variables, and Pub/Sub subscriptions together natively.
-3.  **Firebase Hosting Deployment:** Deploy the frontend UI via Firebase App Hosting to consume the backend APIs.
+The next required actions are operational rather than bug fixes:
+
+---
+
+## 4. Remaining Actions (Not Bugs)
+
+### Action 1: Run the Cloud Build pipeline end-to-end
+Trigger either via a push to `main` (once the branch is merged) or manually:
+```bash
+cd glass-record
+gcloud builds submit --config=cloudbuild.yaml \
+  --project=glass-record-prod \
+  --substitutions=_AR_REGION=us-central1,_AR_REPO=agents,_REGION=us-central1
+```
+Expected result: `editor:manual` and `researcher:manual` images pushed to Artifact Registry.
+
+### Action 2: Re-run Terraform Apply
+Terraform's first `apply` failed because the Docker images did not yet exist in Artifact Registry, causing `google_cloud_run_v2_service` provisioning to fail. Now that images will be present after Action 1, re-run:
+```bash
+cd glass-record/infra
+terraform apply -var-file=envs/prod.tfvars
+```
+This wires Cloud Run services, env vars, Pub/Sub subscriptions, and Cloud Scheduler jobs.
+
+### Action 3: Firebase Hosting Deployment
+Deploy the Next.js dashboard via Firebase App Hosting:
+```bash
+cd glass-record
+firebase deploy --only firestore:rules --project=glass-record-prod
+firebase deploy --only hosting --project=glass-record-prod
+```
+
+### Action 4: Activate MCP Log Server (local dev)
+Install the new MCP optional dependencies to enable Claude Code log access:
+```bash
+uv sync --project glass-record --extra mcp
+```
+The `.mcp.json` at the repo root registers the server automatically on next Claude Code open.

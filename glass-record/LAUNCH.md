@@ -184,7 +184,12 @@ NEXT_PUBLIC_EDITOR_URL=https://glass-record-editor-<project-hash>.us-central1.ru
 ```bash
 cd glass-record
 uv sync
-uv run playwright install chromium
+uv run playwright install chromium  # only needed for local runs; Docker handles this in prod
+```
+
+To also enable the MCP log-access server for Claude Code:
+```bash
+uv sync --extra mcp
 ```
 
 ### 4b. Start local services
@@ -320,7 +325,7 @@ terraform apply -var-file=envs/prod.tfvars
 ```
 
 This creates:
-- Artifact Registry repository (`glass-record`)
+- Artifact Registry repository (`agents`)
 - Pub/Sub topic (`glass-record-researcher-tasks`) + subscription
 - Cloud Run services (`glass-record-editor`, `glass-record-researcher`)
 - Cloud Scheduler jobs (one per journalist in `journalists` map)
@@ -393,8 +398,12 @@ gcloud projects add-iam-policy-binding glass-record-prod \
 cd glass-record
 gcloud builds submit --config=cloudbuild.yaml \
   --project=glass-record-prod \
-  --substitutions=_AR_REGION=us-central1,_AR_REPO=glass-record,_REGION=us-central1
+  --substitutions=_AR_REGION=us-central1,_AR_REPO=agents,_REGION=us-central1
 ```
+
+> `_AR_REPO` must be `agents` — that is the name of the Artifact Registry repository
+> provisioned by Terraform. Using any other value will cause the push step to fail
+> with a 404 from the registry.
 
 Pipeline: unit tests → build base image → build editor + researcher images (parallel) → push → deploy both Cloud Run services.
 
@@ -509,7 +518,53 @@ Supported jurisdictions: `UN`, `EU`, `ICC`, `ICJ`, `US_FEDERAL`, `NATO`, `WORLD_
 
 ---
 
-## 11. Operational Runbook
+## 11. MCP Log Server (Claude Code integration)
+
+The repo ships a FastMCP server at `mcp/logs_server.py` that gives Claude Code
+direct read access to Cloud Run error logs and Firestore cycle failures — no
+manual copy-paste required.
+
+### 11a. Install dependencies
+
+```bash
+cd glass-record
+uv sync --extra mcp
+```
+
+### 11b. Register with Claude Code
+
+The `.mcp.json` at the repo root registers the server automatically. Just
+re-open the project in Claude Code after installing. Verify it loaded:
+
+```
+/mcp
+```
+
+You should see `glass-record-logs` listed with three tools:
+- `get_cloud_run_errors` — Cloud Logging ERROR/CRITICAL entries
+- `get_cycle_errors` — Firestore `activity_log` cycle_failed entries
+- `get_compliance_failures` — Firestore `compliance_log` passed=False entries
+
+### 11c. Usage examples
+
+```
+# Last 30 min of editor errors
+get_cloud_run_errors("glass-record-editor", minutes=30)
+
+# Last 20 cycle failures for a journalist
+get_cycle_errors("un-security-council-001")
+
+# Compliance failures
+get_compliance_failures("un-security-council-001")
+```
+
+> The server uses `GOOGLE_CLOUD_PROJECT=glass-record-prod` from `.mcp.json`.
+> For a different environment, override it in `.mcp.json` or set the env var
+> before opening Claude Code.
+
+---
+
+## 12. Operational Runbook
 
 ### Check a journalist's cycle status
 
@@ -555,6 +610,12 @@ gcloud logging tail \
   --project=glass-record-prod --format="value(jsonPayload)"
 ```
 
+Or ask Claude Code directly (no shell needed — uses MCP log server):
+```
+get_cloud_run_errors("glass-record-editor", minutes=60)
+get_cycle_errors("un-security-council-001")
+```
+
 ### Neo4j graph inspect
 
 ```bash
@@ -565,7 +626,7 @@ cypher-shell -a $NEO4J_URI -u $NEO4J_USER -p $NEO4J_PASSWORD \
 
 ---
 
-## 12. Architecture Quick Reference
+## 13. Architecture Quick Reference
 
 ```
 Cloud Scheduler (daily cron)
@@ -592,7 +653,7 @@ Tips flow:
 
 ---
 
-## 13. Cost Estimates (GCP free tier optimised)
+## 14. Cost Estimates (GCP free tier optimised)
 
 | Service | Free tier | Estimated monthly at 1 journalist |
 |---|---|---|
