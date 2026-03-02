@@ -8,16 +8,14 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 # Install dependencies (cached layer — only rebuilds when lockfile changes)
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev
 
 # Install Playwright Chromium binary
 RUN /app/.venv/bin/playwright install chromium --with-deps
 
 # Copy source and install project
 COPY . .
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim AS runtime
 COPY --from=builder /app /app
