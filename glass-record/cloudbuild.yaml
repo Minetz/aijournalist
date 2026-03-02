@@ -8,7 +8,7 @@ steps:
       - |
         pip install uv --quiet
         uv pip install --system -e ".[dev]" --quiet
-        pytest tests/unit -x -q
+        python -m pytest tests/unit -x -q
     env:
       - FIRESTORE_EMULATOR_HOST=localhost:8080
       - NEO4J_URI=bolt://localhost:7687
