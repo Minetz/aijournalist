@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.7"
+  required_version = ">= 1.5"
   required_providers {
     google = {
       source  = "hashicorp/google"
@@ -112,11 +112,18 @@ resource "google_storage_bucket" "evidence" {
   force_destroy               = false
 
   lifecycle_rule {
-    action { type = "SetStorageClass"; storage_class = "NEARLINE" }
-    condition { age = 90 }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "NEARLINE"
+    }
+    condition {
+      age = 90
+    }
   }
 
-  versioning { enabled = true }
+  versioning {
+    enabled = true
+  }
 }
 
 resource "google_storage_bucket_iam_member" "agent_evidence_rw" {

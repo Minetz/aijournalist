@@ -25,7 +25,7 @@ steps:
       - -t
       - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:latest
       - -f
-      - docker/Dockerfile.base
+      - docker/base.Dockerfile
       - .
     waitFor: [unit-tests]
 
@@ -39,7 +39,7 @@ steps:
       - -t
       - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:latest
       - -f
-      - docker/Dockerfile.editor
+      - docker/editor.Dockerfile
       - --build-arg
       - BASE_IMAGE=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$SHORT_SHA
       - .
@@ -55,7 +55,7 @@ steps:
       - -t
       - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:latest
       - -f
-      - docker/Dockerfile.researcher
+      - docker/researcher.Dockerfile
       - --build-arg
       - BASE_IMAGE=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$SHORT_SHA
       - .
@@ -116,7 +116,7 @@ steps:
 
 substitutions:
   _AR_REGION: us-central1
-  _AR_REPO: glass-record
+  _AR_REPO: agents
   _REGION: us-central1
 
 options:

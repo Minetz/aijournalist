@@ -1,3 +1,4 @@
-FROM glass-record/base:latest
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
 ENV PORT=8080
 CMD ["uvicorn", "agents.editor.main:app", "--host", "0.0.0.0", "--port", "8080"]

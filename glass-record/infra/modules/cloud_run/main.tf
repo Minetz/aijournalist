@@ -4,9 +4,19 @@ variable "service_name"    { type = string }
 variable "image"           { type = string }
 variable "env_vars"        { type = map(string) }
 variable "service_account" { type = string }
-variable "max_instances"   { type = number; default = 10 }
-variable "concurrency"     { type = number; default = 80 }
-variable "timeout_seconds" { type = number; default = 3600 }
+variable "max_instances" {
+  type    = number
+  default = 10
+}
+variable "concurrency" {
+  type    = number
+  default = 80
+}
+variable "timeout_seconds" {
+  type    = number
+  default = 3600
+}
+
 
 resource "google_cloud_run_v2_service" "service" {
   name     = var.service_name
