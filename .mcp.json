@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "glass-record-logs": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project", "glass-record",
+        "--extra", "mcp",
+        "python", "glass-record/mcp/logs_server.py"
+      ],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "glass-record-prod"
+      }
+    }
+  }
+}
