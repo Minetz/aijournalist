@@ -21,7 +21,7 @@ steps:
     args:
       - build
       - -t
-      - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$SHORT_SHA
+      - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$_TAG
       - -t
       - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:latest
       - -f
@@ -35,13 +35,13 @@ steps:
     args:
       - build
       - -t
-      - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:$SHORT_SHA
+      - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:$_TAG
       - -t
       - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:latest
       - -f
       - docker/editor.Dockerfile
       - --build-arg
-      - BASE_IMAGE=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$SHORT_SHA
+      - BASE_IMAGE=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$_TAG
       - .
     waitFor: [build-base]
 
@@ -51,13 +51,13 @@ steps:
     args:
       - build
       - -t
-      - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:$SHORT_SHA
+      - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:$_TAG
       - -t
       - $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:latest
       - -f
       - docker/researcher.Dockerfile
       - --build-arg
-      - BASE_IMAGE=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$SHORT_SHA
+      - BASE_IMAGE=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$_TAG
       - .
     waitFor: [build-base]
 
@@ -80,7 +80,7 @@ steps:
       - run
       - deploy
       - glass-record-editor
-      - --image=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:$SHORT_SHA
+      - --image=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:$_TAG
       - --region=$_REGION
       - --platform=managed
       - --no-allow-unauthenticated
@@ -101,7 +101,7 @@ steps:
       - run
       - deploy
       - glass-record-researcher
-      - --image=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:$SHORT_SHA
+      - --image=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:$_TAG
       - --region=$_REGION
       - --platform=managed
       - --no-allow-unauthenticated
@@ -118,6 +118,7 @@ substitutions:
   _AR_REGION: us-central1
   _AR_REPO: agents
   _REGION: us-central1
+  _TAG: manual
 
 options:
   logging: CLOUD_LOGGING_ONLY
