@@ -39,13 +39,13 @@ During the initial deployment of the Glass Record platform to GCP, the CI/CD pip
 *   **Fix:** Removed the `--mount=type=cache` flags from the `base.Dockerfile`.
 
 ## 3. Current State
-**Status:** **Build `52d2fd0a-03ea-4001-b05a-bf2635615cd6` is currently RUNNING.**
+**Status:** **Build `52d2fd0a-03ea-4001-b05a-bf2635615cd6` FAILED at the `build-base` step.**
 
-All the above fixes have been committed to the repository and pushed. A fresh Cloud Build pipeline was triggered with the changes.
-The build is currently executing the `build-base` step. Because it must download Chromium and its OS dependencies for Playwright via `uv sync`, this step is expected to take between 10 to 15 minutes.
+While the unit tests pass consistently now, the `docker build` command for the base image continues to fail with exit code 1 in the Cloud Build environment. Local replication of the Docker build was successful but did not translate to Cloud Build success.
 
 ## 4. Pending Problems to Solve (Next Steps)
-If the current Cloud Build succeeds, the following actions remain to complete the deployment loop:
-1.  **Monitor Build Success:** Confirm the `unittests`, `base`, `editor`, and `researcher` images build, push, and deploy successfully to Cloud Run.
+The deployment is currently **blocked** by the base image Docker build failure in Cloud Build.
+
+1.  **Debug `build-base` Failure:** Investigate why `docker build` fails with exit code 1 specifically in Cloud Build despite the removal of BuildKit cache mounts. It might require increasing Cloud Build machine type/disk size for Playwright, or using a different builder image.
 2.  **Re-run Terraform Apply:** Run `terraform apply` one final time to configure the Cloud Run services properly. Terraform initially failed to provision the `google_cloud_run_v2_service` blocks because the Docker images did not exist in Artifact Registry yet. Now that they will be built and pushed, Terraform can wire the services, environmental variables, and Pub/Sub subscriptions together natively.
 3.  **Firebase Hosting Deployment:** Deploy the frontend UI via Firebase App Hosting to consume the backend APIs.

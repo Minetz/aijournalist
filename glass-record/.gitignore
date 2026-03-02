@@ -11,3 +11,7 @@ dist/
 uv.lock
 node_modules/
 .next/
+
+# Terraform local state and providers
+infra/.terraform/
+infra/.terraform.lock.hcl
