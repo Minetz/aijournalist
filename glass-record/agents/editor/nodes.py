@@ -24,7 +24,8 @@ async def _set_cycle_status(
     cycle_id: str = "",
     extra: dict | None = None,
 ) -> None:
-    """Write the journalist's current cycle status to Firestore for dashboard polling."""
+    """Write the journalist's current cycle status to Firestore for dashboard polling.
+    Uses set+merge so this is safe on brand-new journalist documents."""
     doc = {
         "status": status,
         "cycle_id": cycle_id,
@@ -34,7 +35,7 @@ async def _set_cycle_status(
     await (
         db.collection("journalists")
         .document(journalist_id)
-        .update({"cycle_status": doc})
+        .set({"cycle_status": doc}, merge=True)
     )
 
 

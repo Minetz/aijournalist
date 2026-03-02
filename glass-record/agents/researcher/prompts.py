@@ -10,6 +10,9 @@ Source content (may be truncated):
 Extract only verifiable, factual claims directly relevant to the sub-question.
 Do not include opinion, speculation, or claims unrelated to the question.
 
+Also extract named entities mentioned in relevant claims.
+Entity types: PERSON, ORGANIZATION, LOCATION, STATUTE, DATE, AMOUNT
+
 Respond with JSON only:
 {{
   "relevant": true,
@@ -18,9 +21,13 @@ Respond with JSON only:
     "Specific factual claim 2"
   ],
   "credibility_notes": "Brief assessment of source credibility (e.g. official document, news outlet, NGO report).",
-  "credibility_score": <float 0.0 to 1.0>
+  "credibility_score": <float 0.0 to 1.0>,
+  "entities": [
+    {{"name": "Entity Name", "type": "ORGANIZATION"}},
+    {{"name": "Another Entity", "type": "PERSON"}}
+  ]
 }}
 
 If the source is not relevant, respond:
-{{"relevant": false, "claims": [], "credibility_notes": "", "credibility_score": 0.0}}
+{{"relevant": false, "claims": [], "credibility_notes": "", "credibility_score": 0.0, "entities": []}}
 """.strip()

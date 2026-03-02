@@ -1,0 +1,64 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Journalists and all public sub-collections ───────────────────────
+    // All journalist data is public by design (radical transparency mandate).
+    // Writes come exclusively from Cloud Run service accounts — never from clients.
+
+    match /journalists/{journalistId} {
+      allow read: if true;
+      allow write: if false;
+
+      match /activity_log/{docId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /evidence_locker/{docId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /compliance_log/{docId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /legal_trees/{docId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /stories/{docId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /cost_ledger/{docId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      // Tips: public read (all tips + responses are public),
+      // public CREATE only (anonymous submission).
+      // Updates (adding verification) come from the service account only.
+      match /tips/{docId} {
+        allow read: if true;
+        allow create: if
+          request.resource.data.keys().hasAll(["content", "submitted_at"]) &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() >= 10 &&
+          request.resource.data.content.size() <= 5000 &&
+          !request.resource.data.keys().hasAny(["verification"]);  // no self-verification
+        allow update, delete: if false;
+      }
+    }
+
+    // ── Deny everything else ─────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

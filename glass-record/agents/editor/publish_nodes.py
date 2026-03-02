@@ -31,8 +31,8 @@ async def _set_cycle_status(
         "updated_at": datetime.datetime.utcnow().isoformat(),
         **(extra or {}),
     }
-    await db.collection("journalists").document(journalist_id).update(
-        {"cycle_status": doc}
+    await db.collection("journalists").document(journalist_id).set(
+        {"cycle_status": doc}, merge=True
     )
 
 

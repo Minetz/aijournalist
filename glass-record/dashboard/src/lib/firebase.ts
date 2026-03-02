@@ -82,6 +82,34 @@ export function subscribeToStories(
   });
 }
 
+export function subscribeToCostLedger(
+  journalistId: string,
+  callback: (entries: Record<string, unknown>[]) => void,
+) {
+  const q = query(
+    collection(db, "journalists", journalistId, "cost_ledger"),
+    orderBy("recorded_at", "desc"),
+    limit(30),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+}
+
+export function subscribeToTips(
+  journalistId: string,
+  callback: (tips: Record<string, unknown>[]) => void,
+) {
+  const q = query(
+    collection(db, "journalists", journalistId, "tips"),
+    orderBy("submitted_at", "desc"),
+    limit(20),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+}
+
 export async function getAllJournalists(): Promise<Record<string, unknown>[]> {
   const snap = await getDocs(collection(db, "journalists"));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
