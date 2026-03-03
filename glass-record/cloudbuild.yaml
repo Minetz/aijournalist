@@ -62,14 +62,34 @@ steps:
     waitFor: [build-base]
 
   # ── 5. Push images ─────────────────────────────────────────────────────────
+  - id: push-base
+    name: gcr.io/cloud-builders/docker
+    args: [push, '$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:$_TAG']
+    waitFor: [build-base]
+
+  - id: push-base-latest
+    name: gcr.io/cloud-builders/docker
+    args: [push, '$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/base:latest']
+    waitFor: [build-base]
+
   - id: push-editor
     name: gcr.io/cloud-builders/docker
-    args: [push, --all-tags, $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor]
+    args: [push, '$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:$_TAG']
+    waitFor: [build-editor]
+
+  - id: push-editor-latest
+    name: gcr.io/cloud-builders/docker
+    args: [push, '$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:latest']
     waitFor: [build-editor]
 
   - id: push-researcher
     name: gcr.io/cloud-builders/docker
-    args: [push, --all-tags, $_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher]
+    args: [push, '$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:$_TAG']
+    waitFor: [build-researcher]
+
+  - id: push-researcher-latest
+    name: gcr.io/cloud-builders/docker
+    args: [push, '$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/researcher:latest']
     waitFor: [build-researcher]
 
   # ── 6. Deploy Editor to Cloud Run ──────────────────────────────────────────
@@ -84,7 +104,7 @@ steps:
       - --region=$_REGION
       - --platform=managed
       - --no-allow-unauthenticated
-      - --service-account=glass-record-editor@$PROJECT_ID.iam.gserviceaccount.com
+      - --service-account=glass-record-agent@$PROJECT_ID.iam.gserviceaccount.com
       - --set-env-vars=GCP_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-1.5-pro-002
       - --min-instances=0
       - --max-instances=10
@@ -105,7 +125,7 @@ steps:
       - --region=$_REGION
       - --platform=managed
       - --no-allow-unauthenticated
-      - --service-account=glass-record-researcher@$PROJECT_ID.iam.gserviceaccount.com
+      - --service-account=glass-record-agent@$PROJECT_ID.iam.gserviceaccount.com
       - --set-env-vars=GCP_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-1.5-pro-002,RESEARCHER_MODE=pubsub
       - --min-instances=0
       - --max-instances=50

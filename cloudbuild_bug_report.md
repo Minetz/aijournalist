@@ -54,47 +54,34 @@ During the initial deployment of the Glass Record platform to GCP, the CI/CD pip
 
 ---
 
-## 3. Current State
+### Issue 12: `docker push --all-tags` Unsupported by Cloud Build Docker Builder ✅ Fixed
+*   **Problem:** The `push-editor` and `push-researcher` steps used `docker push --all-tags`, which is not supported by the `gcr.io/cloud-builders/docker` builder version in Cloud Build. The push failed silently with exit code 1.
+*   **Fix:** Replaced `--all-tags` with explicit individual tag pushes (`:manual` and `:latest`) for base, editor, and researcher images. Also added `push-base` steps that were previously missing.
 
-**Status: All known build failures resolved. Pipeline unblocked. ✅**
+### Issue 13: Cloud Build IAM Grants on Wrong Service Account ✅ Fixed
+*   **Problem:** All IAM permissions (`roles/artifactregistry.writer`, `roles/run.admin`, etc.) were granted to the Cloud Build SA (`124545852000@cloudbuild.gserviceaccount.com`), but Cloud Build actually runs as the default Compute Engine SA (`124545852000-compute@developer.gserviceaccount.com`). Docker push and Cloud Run deploy both failed with `PERMISSION_DENIED`.
+*   **Fix:** Granted `roles/artifactregistry.writer`, `roles/logging.logWriter`, `roles/run.admin`, and `roles/iam.serviceAccountUser` to the Compute Engine SA.
 
-All 11 issues have been fixed and pushed to `claude/add-project-scope-h6R8G`. The unit tests pass consistently (`16 passed`). The `build-base` step's root cause (`uv.lock` missing from build context) has been eliminated.
+### Issue 14: Deploy Steps Reference Non-Existent Service Accounts ✅ Fixed
+*   **Problem:** The `deploy-editor` and `deploy-researcher` steps in `cloudbuild.yaml` referenced `glass-record-editor@` and `glass-record-researcher@` service accounts, which do not exist. Terraform created a single shared SA: `glass-record-agent@`.
+*   **Fix:** Updated both deploy steps to use `--service-account=glass-record-agent@$PROJECT_ID.iam.gserviceaccount.com`.
 
-The next required actions are operational rather than bug fixes:
+### Issue 15: Terraform `image_tag` Mismatch ✅ Fixed
+*   **Problem:** `prod.tfvars` used `image_tag = "stable"`, but Cloud Build pushes `:manual` and `:latest` tags. Terraform destroyed the Cloud Run services then failed to recreate them because the `:stable` image didn't exist in Artifact Registry.
+*   **Fix:** Changed `prod.tfvars` to `image_tag = "latest"`.
 
 ---
 
-## 4. Remaining Actions (Not Bugs)
+## 3. Current State
 
-### Action 1: Run the Cloud Build pipeline end-to-end
-Trigger either via a push to `main` (once the branch is merged) or manually:
-```bash
-cd glass-record
-gcloud builds submit --config=cloudbuild.yaml \
-  --project=glass-record-prod \
-  --substitutions=_AR_REGION=us-central1,_AR_REPO=agents,_REGION=us-central1
-```
-Expected result: `editor:manual` and `researcher:manual` images pushed to Artifact Registry.
+**Status: Platform fully deployed. All 15 issues resolved. All actions completed. ✅**
 
-### Action 2: Re-run Terraform Apply
-Terraform's first `apply` failed because the Docker images did not yet exist in Artifact Registry, causing `google_cloud_run_v2_service` provisioning to fail. Now that images will be present after Action 1, re-run:
-```bash
-cd glass-record/infra
-terraform apply -var-file=envs/prod.tfvars
-```
-This wires Cloud Run services, env vars, Pub/Sub subscriptions, and Cloud Scheduler jobs.
+| Resource | Status | URL |
+|---|---|---|
+| Editor Cloud Run | ✅ Healthy | `https://glass-record-editor-c6kegpaz7q-uc.a.run.app` |
+| Researcher Cloud Run | ✅ Serving | `https://glass-record-researcher-c6kegpaz7q-uc.a.run.app` |
+| Artifact Registry | ✅ 6 images | `us-central1-docker.pkg.dev/glass-record-prod/agents` |
+| Terraform | ✅ 13 resources | All in sync |
+| Firestore rules | ✅ Deployed | — |
+| MCP log server | ✅ Ready | — |
 
-### Action 3: Firebase Hosting Deployment
-Deploy the Next.js dashboard via Firebase App Hosting:
-```bash
-cd glass-record
-firebase deploy --only firestore:rules --project=glass-record-prod
-firebase deploy --only hosting --project=glass-record-prod
-```
-
-### Action 4: Activate MCP Log Server (local dev)
-Install the new MCP optional dependencies to enable Claude Code log access:
-```bash
-uv sync --project glass-record --extra mcp
-```
-The `.mcp.json` at the repo root registers the server automatically on next Claude Code open.
