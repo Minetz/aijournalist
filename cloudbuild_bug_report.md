@@ -74,7 +74,8 @@ During the initial deployment of the Glass Record platform to GCP, the CI/CD pip
 
 ## 3. Current State
 
-**Status: Platform fully deployed. All 15 issues resolved. All actions completed. ✅**
+**Status: Platform fully deployed. All 15 issues resolved. ✅**
+**Architecture simplified to fully GCP-native. All external services removed. ✅**
 
 | Resource | Status | URL |
 |---|---|---|
@@ -84,4 +85,35 @@ During the initial deployment of the Glass Record platform to GCP, the CI/CD pip
 | Terraform | ✅ 13 resources | All in sync |
 | Firestore rules | ✅ Deployed | — |
 | MCP log server | ✅ Ready | — |
+
+---
+
+## 4. Post-Deployment Architecture Simplification
+
+After deployment the platform was refactored to remove all external service dependencies.
+The required credentials went from 13 environment variables down to 5.
+
+### Removed: Ghost CMS
+- **Was:** Articles published to Ghost via Admin API (JWT auth); required a separate VM or Ghost Pro subscription ($6–9/month).
+- **Now:** Article `body_html` stored in Firestore `stories/{story_id}` and rendered inline in the Next.js dashboard. No external service needed.
+- **Deleted:** `cms/ghost.py`, `PyJWT` dependency, `GHOST_ADMIN_URL` / `GHOST_ADMIN_API_KEY` env vars.
+
+### Removed: Neo4j Aura
+- **Was:** Knowledge graph stored in Neo4j Aura (external cloud); required `neo4j` Python driver, `NEO4J_URI/USER/PASSWORD` env vars, Cypher schema setup.
+- **Now:** Knowledge graph derived from Firestore `evidence_locker` collection (entities already stored on each evidence document). `/graph/{journalist_id}` API builds nodes/links from Firestore queries at request time.
+- **Deleted:** `graph/client.py`, `graph/queries.py`, `graph/schema.cypher`, `neo4j>=5.28` dependency, all three `NEO4J_*` env vars.
+
+### Removed: Google Custom Search + Playwright
+- **Was:** Researcher pipeline: Custom Search API → Playwright scraper → Gemini analysis (3 nodes, 2 external API keys, Playwright bloating the Docker image by ~400 MB).
+- **Now:** Single `grounded_research` node using `gemini-2.0-flash` with `google_search` tool. Gemini handles search + content retrieval natively via Vertex AI. No browser, no external search API key.
+- **Deleted:** `tools/search/google_search.py`, `tools/browser/scraper.py`, `browser-use`, `playwright`, `docling` dependencies, `GOOGLE_SEARCH_API_KEY` / `GOOGLE_SEARCH_ENGINE_ID` env vars.
+- **Researcher graph:** 3 nodes (search → scrape → analyse_store) → 1 node (grounded_research).
+
+### Added: Investigation "glass window" tab
+- New **Investigation** tab in the dashboard shows the AI's work as a human-readable narrative:
+  - Sub-questions the journalist is researching
+  - Findings grouped by question (claims + sources)
+  - Entity cross-references (who/what appears repeatedly across sources)
+  - Latest published article rendered inline
+- Story rendering moved inline (full article HTML in the dashboard, not a Ghost URL).
 

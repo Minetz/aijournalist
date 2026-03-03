@@ -11,21 +11,11 @@ dependencies = [
     "langchain-google-genai>=4.0",
     "google-genai>=1.0",
 
-    # GCP / Firestore
+    # GCP / Firestore / Storage / Pub/Sub / Scheduler
     "google-cloud-firestore>=2.23",
     "google-cloud-storage>=2.16",
     "google-cloud-pubsub>=2.21",
     "google-cloud-scheduler>=2.13",
-
-    # Web browsing / search
-    "browser-use>=0.1",
-    "playwright>=1.44",
-
-    # Document processing
-    "docling>=2.70",
-
-    # Knowledge graph
-    "neo4j>=5.28",
 
     # HTTP / serving
     "fastapi>=0.111",
@@ -40,7 +30,6 @@ dependencies = [
     "tenacity>=8.3",
     "structlog>=24.1",
     "python-dotenv>=1.0",
-    "pyjwt>=2.8",
 ]
 
 [project.optional-dependencies]

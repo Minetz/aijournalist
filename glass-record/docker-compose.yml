@@ -2,22 +2,6 @@ version: "3.9"
 
 services:
 
-  neo4j:
-    image: neo4j:5.20-community
-    ports:
-      - "7474:7474"   # Browser UI
-      - "7687:7687"   # Bolt
-    environment:
-      NEO4J_AUTH: neo4j/devpassword
-      NEO4J_PLUGINS: '["apoc"]'
-    volumes:
-      - neo4j_data:/data
-    healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "devpassword", "RETURN 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   firestore:
     image: mtlynch/firestore-emulator:latest
     ports:
@@ -30,33 +14,3 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  ghost_db:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: ghostpassword
-      MYSQL_DATABASE: ghost
-    volumes:
-      - ghost_db_data:/var/lib/mysql
-
-  ghost:
-    image: ghost:5-alpine
-    ports:
-      - "2368:2368"
-    environment:
-      NODE_ENV: development
-      database__client: mysql
-      database__connection__host: ghost_db
-      database__connection__user: root
-      database__connection__password: ghostpassword
-      database__connection__database: ghost
-      url: http://localhost:2368
-    depends_on:
-      - ghost_db
-    volumes:
-      - ghost_data:/var/lib/ghost/content
-
-volumes:
-  neo4j_data:
-  ghost_db_data:
-  ghost_data:

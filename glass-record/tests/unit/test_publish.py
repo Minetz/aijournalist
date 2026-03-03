@@ -31,7 +31,8 @@ async def test_publish_skipped_when_compliance_failed():
 
 
 @pytest.mark.asyncio
-async def test_publish_calls_ghost_on_success(mock_firestore_client):
+async def test_publish_stores_to_firestore(mock_firestore_client):
+    """synthesise_and_publish stores body_html in Firestore (no external CMS)."""
     from pydantic import BaseModel
 
     class ArticleDraft(BaseModel):
@@ -46,8 +47,6 @@ async def test_publish_calls_ghost_on_success(mock_firestore_client):
     mock_tree.summary = "Case for veto accountability under international law."
     mock_tree.root_nodes = []
 
-    mock_ghost_post = {"id": "ghost-post-001", "url": "https://ghost.local/un-veto"}
-
     with (
         patch("agents.editor.publish_nodes.firestore.AsyncClient",
               return_value=mock_firestore_client),
@@ -60,7 +59,6 @@ async def test_publish_calls_ghost_on_success(mock_firestore_client):
         patch("agents.editor.publish_nodes._fetch_evidence_summary",
               AsyncMock(return_value="Evidence item 1: credibility 0.9")),
         patch("agents.editor.publish_nodes.get_llm") as mock_get_llm,
-        patch("agents.editor.publish_nodes.GhostClient") as mock_ghost_cls,
     ):
         mock_llm = MagicMock()
         mock_llm.with_structured_output.return_value.ainvoke = AsyncMock(
@@ -68,15 +66,18 @@ async def test_publish_calls_ghost_on_success(mock_firestore_client):
         )
         mock_get_llm.return_value = mock_llm
 
-        mock_ghost = AsyncMock()
-        mock_ghost.create_post = AsyncMock(return_value=mock_ghost_post)
-        mock_ghost_cls.return_value = mock_ghost
-
         from agents.editor.publish_nodes import synthesise_and_publish
         result = await synthesise_and_publish(_make_state(compliance_passed=True))
 
-    mock_ghost.create_post.assert_called_once()
-    call_kwargs = mock_ghost.create_post.call_args.kwargs
-    assert "UN Security Council Veto" in call_kwargs["title"]
-    assert "glass-record" in call_kwargs["tags"]
+    # Story was stored in Firestore (set called on stories subcollection)
+    stories_col = (
+        mock_firestore_client
+        .collection.return_value
+        .document.return_value
+        .collection.return_value
+    )
+    stories_col.document.return_value.set.assert_called_once()
+    stored = stories_col.document.return_value.set.call_args[0][0]
+    assert "body_html" in stored
+    assert "UN Security Council Veto" in stored["title"]
     assert len(result["messages"]) == 1

@@ -1,33 +1,37 @@
-EVIDENCE_ANALYSIS_PROMPT = """
-You are an autonomous investigative journalist. Assess whether the source below contains
-factual claims relevant to your research sub-question.
+EVIDENCE_EXTRACTION_PROMPT = """
+You are an investigative journalist. You have just conducted a Google Search on the sub-question below
+and received a grounded research summary. Extract structured evidence from it.
 
 Sub-question: {sub_question}
-Source URL: {url}
-Source content (may be truncated):
-{text}
 
-Extract only verifiable, factual claims directly relevant to the sub-question.
-Do not include opinion, speculation, or claims unrelated to the question.
+Grounded research summary (from Google Search):
+{grounded_summary}
 
-Also extract named entities mentioned in relevant claims.
-Entity types: PERSON, ORGANIZATION, LOCATION, STATUTE, DATE, AMOUNT
+Sources found:
+{sources_json}
 
-Respond with JSON only:
+For each source that contains relevant factual claims, extract structured evidence.
+Return ONLY valid JSON — no markdown, no commentary:
 {{
-  "relevant": true,
-  "claims": [
-    "Specific factual claim 1 (with any dates, figures, or named entities)",
-    "Specific factual claim 2"
-  ],
-  "credibility_notes": "Brief assessment of source credibility (e.g. official document, news outlet, NGO report).",
-  "credibility_score": <float 0.0 to 1.0>,
-  "entities": [
-    {{"name": "Entity Name", "type": "ORGANIZATION"}},
-    {{"name": "Another Entity", "type": "PERSON"}}
+  "findings": [
+    {{
+      "source_url": "https://...",
+      "source_title": "Title of the source",
+      "claims": [
+        "Specific verifiable factual claim 1 (include dates, figures, named entities where present)",
+        "Specific verifiable factual claim 2"
+      ],
+      "credibility_score": 0.85,
+      "credibility_notes": "Official UN document / major news outlet / NGO report / government statement",
+      "entities": [
+        {{"name": "Entity Name", "type": "ORGANIZATION"}},
+        {{"name": "Person Name", "type": "PERSON"}}
+      ]
+    }}
   ]
 }}
 
-If the source is not relevant, respond:
-{{"relevant": false, "claims": [], "credibility_notes": "", "credibility_score": 0.0, "entities": []}}
+Only include sources with relevant, verifiable factual claims. Skip opinion, speculation, or unrelated content.
+Entity types: PERSON, ORGANIZATION, LOCATION, STATUTE, DATE, AMOUNT.
+If no relevant findings, return {{"findings": []}}.
 """.strip()

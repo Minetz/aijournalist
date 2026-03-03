@@ -1,7 +1,11 @@
 # The Glass Record — Launch Guide
 
 > Complete credentials, configuration, and deployment steps.
-> Follow sections in order. Estimated time: 2–3 hours on a fresh GCP project.
+> Follow sections in order. Estimated time: ~1 hour on a fresh GCP project.
+>
+> **Only external credential required: a GCP project + service account.**
+> Ghost CMS, Neo4j, and Google Custom Search have been removed.
+> Web research is handled by Gemini's built-in Google Search grounding.
 
 ---
 
@@ -77,7 +81,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/Users/you/glass-record-sa.json
 GOOGLE_CLOUD_PROJECT=glass-record-prod
 ```
 
-### 3b. Vertex AI / Gemini
+### 3b. Vertex AI / Gemini (+ Google Search grounding)
 
 No API key required — Vertex AI uses the service account above.
 Ensure the account has `roles/aiplatform.user` (Terraform grants this automatically).
@@ -85,71 +89,18 @@ Ensure the account has `roles/aiplatform.user` (Terraform grants this automatica
 Set in `.env`:
 ```
 GOOGLE_GENAI_USE_VERTEXAI=true
-GEMINI_MODEL=gemini-1.5-pro-002
+GEMINI_MODEL=gemini-2.0-flash
 ```
 
-> **Cost note:** Gemini 1.5 Pro costs $3.50/1M input tokens, $10.50/1M output tokens.
-> A typical investigation cycle uses ~50–200k tokens ≈ $0.30–$2.50 per cycle.
+> **Model note:** `gemini-2.0-flash` is required for Google Search grounding, which the
+> Researcher agent uses instead of a separate search API + Playwright scraper.
+>
+> **Cost note:** Gemini 2.0 Flash costs $0.10/1M input, $0.40/1M output tokens.
+> Google Search grounding queries are billed at $35/1000 queries via Vertex AI.
+> A typical investigation cycle (3–7 sub-questions) = 3–7 grounding queries ≈ $0.02–$0.05.
 > The cost ledger on each journalist's public page shows exact spend.
 
-### 3c. Google Programmable Search Engine
-
-1. Go to https://programmablesearchengine.google.com/
-2. Create a new search engine → enable "Search the entire web"
-3. Copy **Search Engine ID** (cx)
-4. Go to https://console.cloud.google.com/apis/credentials → **Create API Key**
-5. Restrict the key to **Custom Search API**
-
-Set in `.env`:
-```
-GOOGLE_SEARCH_API_KEY=AIzaSy...
-GOOGLE_SEARCH_ENGINE_ID=b4f3c9...
-```
-
-### 3d. Neo4j (production — Aura Free Tier)
-
-1. Go to https://console.neo4j.io/
-2. Create a **Free** AuraDB instance (5 GB, always-on)
-3. Download the connection credentials file — it contains URI, user, password
-
-Set in `.env` (and in Cloud Run env vars / Secret Manager for prod):
-```
-NEO4J_URI=neo4j+s://xxxxxxxx.databases.neo4j.io
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=<from Aura credentials file>
-```
-
-Apply the schema after Aura is running:
-```bash
-# Install cypher-shell locally: https://neo4j.com/deployment-center/
-cypher-shell -a $NEO4J_URI -u $NEO4J_USER -p $NEO4J_PASSWORD \
-  --file glass-record/graph/schema.cypher
-```
-
-### 3e. Ghost CMS
-
-**Option A — Self-hosted (recommended for prod)**
-
-```bash
-# On a small VM (e.g. GCP e2-micro, $6/month)
-bash <(curl -s https://ghost.org/install.sh)
-```
-
-**Option B — Ghost Pro** at ghost.org (managed, ~$9/month)
-
-After Ghost is running:
-1. Ghost Admin → Settings → Integrations → Add custom integration
-2. Name it "Glass Record"
-3. Copy **Admin API Key** (format: `id:secret` — a hex id, colon, hex secret)
-4. Copy **Admin URL**
-
-Set in `.env`:
-```
-GHOST_ADMIN_URL=https://your-ghost-site.com
-GHOST_ADMIN_API_KEY=6478a3b2c1d4e5f6:9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0
-```
-
-### 3f. Firebase (for dashboard)
+### 3c. Firebase (for dashboard)
 
 ```bash
 firebase login
@@ -196,41 +147,24 @@ uv sync --extra mcp
 
 ```bash
 docker compose up -d
-# Wait ~30s for Neo4j and Ghost to be healthy
-docker compose ps   # all should show "healthy"
+# Wait ~10s for Firestore emulator to be healthy
+docker compose ps   # should show "healthy"
 ```
 
 Local service URLs:
-- Neo4j Browser: http://localhost:7474 (neo4j / devpassword)
 - Firestore emulator: http://localhost:8080
-- Ghost: http://localhost:2368
 
 ### 4c. Create `.env` from template
 
 ```bash
 cp .env.example .env
-# Fill in GOOGLE_APPLICATION_CREDENTIALS, GOOGLE_CLOUD_PROJECT,
-# GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_ENGINE_ID,
-# GHOST_ADMIN_URL, GHOST_ADMIN_API_KEY
+# Fill in:
+#   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+#   GOOGLE_CLOUD_PROJECT=glass-record-dev
 # Leave FIRESTORE_EMULATOR_HOST=localhost:8080 for local dev
 ```
 
-### 4d. Apply Neo4j schema
-
-```bash
-docker exec -i $(docker compose ps -q neo4j) \
-  cypher-shell -u neo4j -p devpassword \
-  < graph/schema.cypher
-```
-
-### 4e. Get Ghost Admin API key (local)
-
-1. Go to http://localhost:2368/ghost
-2. Complete Ghost setup (create admin account)
-3. Settings → Integrations → Add custom integration → "Glass Record"
-4. Copy Admin API key → paste into `.env` as `GHOST_ADMIN_API_KEY`
-
-### 4f. Start the Editor service
+### 4e. Start the Editor service
 
 ```bash
 FIRESTORE_EMULATOR_HOST=localhost:8080 \
@@ -239,14 +173,14 @@ FIRESTORE_EMULATOR_HOST=localhost:8080 \
 
 Health check: `curl http://localhost:8000/health` → `{"status":"ok"}`
 
-### 4g. Run tests
+### 4f. Run tests
 
 ```bash
 FIRESTORE_EMULATOR_HOST=localhost:8080 \
   uv run pytest tests/unit -v
 ```
 
-### 4h. Start the dashboard
+### 4g. Start the dashboard
 
 ```bash
 cd dashboard
@@ -332,33 +266,11 @@ This creates:
 - GCS bucket (`glass-record-evidence-prod`) with NEARLINE lifecycle
 - Service accounts + IAM bindings
 
-### 6d. Store secrets in Secret Manager
+### 6d. No additional secrets needed
 
-```bash
-# Neo4j password
-echo -n "YOUR_NEO4J_PASSWORD" | \
-  gcloud secrets create NEO4J_PASSWORD --data-file=- --project=glass-record-prod
-
-# Ghost API key
-echo -n "YOUR_GHOST_API_KEY" | \
-  gcloud secrets create GHOST_ADMIN_API_KEY --data-file=- --project=glass-record-prod
-
-# Grant Cloud Run access to secrets
-gcloud secrets add-iam-policy-binding NEO4J_PASSWORD \
-  --member="serviceAccount:glass-record-agent@glass-record-prod.iam.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-
-gcloud secrets add-iam-policy-binding GHOST_ADMIN_API_KEY \
-  --member="serviceAccount:glass-record-agent@glass-record-prod.iam.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-```
-
-Add these to the Cloud Run service env (re-run `terraform apply` after updating the module or via console):
-```
-NEO4J_URI=neo4j+s://xxxxxxxx.databases.neo4j.io
-NEO4J_USER=neo4j
-GHOST_ADMIN_URL=https://your-ghost-site.com
-```
+All credentials (Firestore, Vertex AI, GCS, Pub/Sub) are covered by the
+`glass-record-agent` service account IAM roles provisioned by Terraform.
+There are no external service secrets to manage.
 
 ---
 
@@ -491,15 +403,8 @@ Supported jurisdictions: `UN`, `EU`, `ICC`, `ICJ`, `US_FEDERAL`, `NATO`, `WORLD_
 | `GOOGLE_CLOUD_PROJECT` | Yes | GCP project ID |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Yes | Must be `true` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Local only | Path to service account JSON |
-| `GEMINI_MODEL` | Yes | `gemini-1.5-pro-002` (or flash for cheaper) |
-| `NEO4J_URI` | Yes | `bolt://localhost:7687` (dev) or Aura URI (prod) |
-| `NEO4J_USER` | Yes | `neo4j` |
-| `NEO4J_PASSWORD` | Yes | Set via Secret Manager in prod |
+| `GEMINI_MODEL` | Yes | `gemini-2.0-flash` (required for Search grounding) |
 | `FIRESTORE_EMULATOR_HOST` | Dev only | `localhost:8080` — remove in prod |
-| `GHOST_ADMIN_URL` | Yes | Ghost instance root URL |
-| `GHOST_ADMIN_API_KEY` | Yes | `<id>:<secret>` from Ghost integration page |
-| `GOOGLE_SEARCH_API_KEY` | Yes | Google Custom Search API key |
-| `GOOGLE_SEARCH_ENGINE_ID` | Yes | Programmable Search Engine cx |
 | `GCS_EVIDENCE_BUCKET` | Yes | Set by Terraform; `glass-record-evidence-{env}` |
 | `PUBSUB_RESEARCHER_TOPIC` | Prod only | Set by Terraform |
 | `RESEARCHER_MODE` | Yes | `local` (dev) or `pubsub` (Cloud Run) |
@@ -616,12 +521,15 @@ get_cloud_run_errors("glass-record-editor", minutes=60)
 get_cycle_errors("un-security-council-001")
 ```
 
-### Neo4j graph inspect
+### Inspect knowledge graph
 
+The graph is derived from Firestore — no separate database needed:
 ```bash
-# Connect to Aura via cypher-shell
-cypher-shell -a $NEO4J_URI -u $NEO4J_USER -p $NEO4J_PASSWORD \
-  "MATCH (j:Journalist)-[:INVESTIGATED]->(s:Story) RETURN j.journalist_id, s.title LIMIT 25"
+# Browse evidence locker in Firestore
+gcloud firestore documents list \
+  "projects/glass-record-prod/databases/(default)/documents/journalists/un-security-council-001/evidence_locker"
+
+# Or via the dashboard → Knowledge Graph tab (force-directed visualization)
 ```
 
 ---
@@ -634,17 +542,19 @@ Cloud Scheduler (daily cron)
         ├─ Firestore: load mandate (immutable)
         ├─ Gemini: select story + decompose sub-questions
         ├─ Pub/Sub: publish per sub-question → Researcher Cloud Run (×N parallel)
-        │     └─ Google Search → Playwright scrape → Gemini analysis
-        │        → Firestore evidence_locker + GCS raw files + Neo4j graph
-        ├─ Compliance Agent: injection scan + mandate drift check → Firestore compliance_log
+        │     └─ Gemini (google_search grounding): search + extract claims + entities
+        │        → Firestore evidence_locker + GCS raw grounded text
+        ├─ Compliance Agent: injection scan + mandate drift → Firestore compliance_log
         ├─ Legal Tree Builder: Gemini structured output → Firestore legal_trees
-        ├─ Ghost CMS: publish story → Firestore stories
+        ├─ Article synthesis: Gemini → body_html stored in Firestore stories
         └─ Cost Ledger: token counts → Firestore cost_ledger
 
 Dashboard (Firebase App Hosting — Next.js)
   ├─ Firestore onSnapshot: real-time activity, evidence, compliance, stories, costs, tips
   ├─ GET /stream/{id}: SSE live cycle events (Editor Cloud Run)
-  └─ GET /graph/{id}: Neo4j nodes+edges → Knowledge Graph visualization
+  ├─ GET /graph/{id}: Firestore-derived knowledge graph (journalist→story→evidence→entity)
+  └─ Investigation tab: sub-questions grouped with findings + entity cross-references
+     Stories tab: full article rendered inline (no external CMS)
 
 Tips flow:
   POST /tips/{id} → Firestore tips (public)
@@ -663,10 +573,10 @@ Tips flow:
 | Pub/Sub | 10 GB/month | ~$0 |
 | Artifact Registry | 0.5 GB free | ~$0.10 |
 | Cloud Storage | 5 GB free | ~$0 |
-| Vertex AI (Gemini) | Pay per token | ~$1–$5/day |
-| Neo4j Aura Free | 5 GB, always-on | ~$0 |
-| Ghost (self-hosted, e2-micro) | — | ~$6/month |
+| Vertex AI (Gemini 2.0 Flash) | Pay per token | ~$0.10–$1/day |
+| Gemini Search grounding | $35/1000 queries | ~$0.02–$0.05/cycle |
 | Firebase App Hosting | Generous free tier | ~$0 |
-| **Total (ex-Gemini)** | | **~$6–$8/month** |
+| **Total** | | **~$0–$2/month + Gemini** |
 
-> The biggest cost is Gemini. Use `GEMINI_MODEL=gemini-1.5-flash-002` ($0.075/1M input, $0.30/1M output) during development to reduce spend by ~95%.
+> Gemini 2.0 Flash is significantly cheaper than 1.5 Pro and supports Search grounding
+> natively. No Ghost VM, no Neo4j, no Custom Search Engine API costs.

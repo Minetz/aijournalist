@@ -13,7 +13,6 @@ from agents.legal_tree.nodes import build_legal_tree
 from agents.shared.base_agent import get_journalist_doc, log_action
 from agents.shared.gemini import get_llm
 from agents.shared.state import EditorState
-from cms.ghost import GhostClient
 
 log = structlog.get_logger()
 
@@ -73,8 +72,8 @@ async def synthesise_and_publish(state: EditorState) -> dict:
     """
     1. Build the legal tree from gathered evidence.
     2. Synthesise a news article using Gemini.
-    3. Publish to Ghost CMS.
-    4. Log the post ID and cost metadata to Firestore.
+    3. Store the article (including full HTML) in Firestore.
+    4. The dashboard renders the article at /{journalist_id}/stories/{story_id}.
 
     Only runs when compliance_passed is True.
     """
@@ -125,34 +124,23 @@ async def synthesise_and_publish(state: EditorState) -> dict:
     )
     draft: ArticleDraft = await llm.ainvoke([HumanMessage(content=prompt)])
 
-    # Append transparency footer
+    story_id = str(uuid.uuid4())
+
+    # Build transparency footer (links are relative to the dashboard)
     footer_html = _build_footer(journalist_id, cycle_id, tree.tree_id)
     full_html = draft.body_html + footer_html
 
-    # Publish to Ghost
-    ghost = GhostClient()
-    post = await ghost.create_post(
-        title=draft.headline,
-        html=full_html,
-        status="published",
-        tags=draft.tags + ["glass-record", journalist_doc["jurisdiction"].lower()],
-    )
-    ghost_post_id = post["id"]
-    ghost_url = post.get("url", "")
-
-    # Record story in Firestore
-    story_id = str(uuid.uuid4())
+    # Store story (including full article HTML) in Firestore
     story_doc = {
         "story_id": story_id,
         "journalist_id": journalist_id,
         "cycle_id": cycle_id,
         "title": draft.headline,
         "standfirst": draft.standfirst,
-        "ghost_post_id": ghost_post_id,
-        "ghost_url": ghost_url,
+        "body_html": full_html,
         "legal_tree_id": tree.tree_id,
         "published_at": datetime.datetime.utcnow().isoformat(),
-        "tags": draft.tags,
+        "tags": draft.tags + ["glass-record", journalist_doc["jurisdiction"].lower()],
     }
     await (
         db.collection("journalists")
@@ -162,23 +150,25 @@ async def synthesise_and_publish(state: EditorState) -> dict:
         .set(story_doc)
     )
 
+    story_path = f"/{journalist_id}/stories/{story_id}"
+
     await log_action(db, journalist_id, cycle_id, "story_published", {
-        "ghost_post_id": ghost_post_id,
-        "ghost_url": ghost_url,
+        "story_id": story_id,
+        "story_path": story_path,
         "headline": draft.headline,
     })
     emit(journalist_id, "story_published", {
         "headline": draft.headline,
-        "ghost_url": ghost_url,
+        "story_path": story_path,
         "cycle_id": cycle_id,
     })
     await _set_cycle_status(db, journalist_id, "idle", cycle_id,
-                            {"last_published": draft.headline, "last_url": ghost_url})
+                            {"last_published": draft.headline, "last_story_path": story_path})
 
     log.info("story_published", journalist_id=journalist_id,
-             ghost_post_id=ghost_post_id, url=ghost_url)
+             story_id=story_id, path=story_path)
 
-    return {"messages": [HumanMessage(content=f"Published: {draft.headline} — {ghost_url}")]}
+    return {"messages": [HumanMessage(content=f"Published: {draft.headline} — {story_path}")]}
 
 
 def _build_footer(journalist_id: str, cycle_id: str, tree_id: str) -> str:
@@ -187,16 +177,15 @@ def _build_footer(journalist_id: str, cycle_id: str, tree_id: str) -> str:
 <section class="glass-record-footer">
   <h4>About this investigation</h4>
   <p>
-    This article was produced autonomously by
-    <a href="https://glassrecord.org/{journalist_id}">The Glass Record</a>.
+    This article was produced autonomously by The Glass Record.
     Every source, evidence item, compliance decision, and reasoning step is
     publicly logged.
   </p>
   <ul>
-    <li><a href="https://glassrecord.org/{journalist_id}/activity">Activity log</a></li>
-    <li><a href="https://glassrecord.org/{journalist_id}/evidence">Evidence locker</a></li>
-    <li><a href="https://glassrecord.org/{journalist_id}/compliance">Compliance log</a></li>
-    <li><a href="https://glassrecord.org/{journalist_id}/legal-tree/{tree_id}">Legal case tree</a></li>
+    <li><a href="/{journalist_id}?tab=activity">Activity log</a></li>
+    <li><a href="/{journalist_id}?tab=evidence">Evidence locker</a></li>
+    <li><a href="/{journalist_id}?tab=compliance">Compliance log</a></li>
+    <li><a href="/{journalist_id}?tab=graph">Knowledge graph</a></li>
   </ul>
   <p><small>Cycle ID: {cycle_id}</small></p>
 </section>
