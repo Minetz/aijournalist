@@ -13,8 +13,8 @@ import {
   subscribeToTips,
 } from "@/lib/firebase";
 import { useSSE } from "@/lib/useSSE";
+import { PipelineDiagram } from "@/components/PipelineDiagram";
 
-// Canvas-based force graph — must be loaded client-side only
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
   loading: () => <p className="text-gray-400 text-sm">Loading graph engine…</p>,
@@ -22,6 +22,7 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
 
 type Tab =
   | "mandate"
+  | "pipeline"
   | "investigation"
   | "activity"
   | "evidence"
@@ -29,19 +30,20 @@ type Tab =
   | "compliance"
   | "stories"
   | "cost"
-  | "tips"
-  | "live";
+  | "tips";
 
 interface GraphNode { id: string; label: string; group: number; x?: number; y?: number }
 interface GraphLink { source: string; target: string; label: string }
 interface GraphData { nodes: GraphNode[]; links: GraphLink[] }
 
 const NODE_COLORS: Record<number, string> = {
-  0: "#111827", // Journalist
-  1: "#3b82f6", // Story
-  2: "#10b981", // Evidence
-  3: "#f59e0b", // Entity
+  0: "#111827",
+  1: "#3b82f6",
+  2: "#10b981",
+  3: "#f59e0b",
 };
+
+// ── Small shared UI components ───────────────────────────────────────────────
 
 function TabBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -86,7 +88,7 @@ function groupBySubQuestion(items: Record<string, unknown>[]) {
   return map;
 }
 
-function allEntities(items: Record<string, unknown>[]) {
+function topEntities(items: Record<string, unknown>[]) {
   const freq = new Map<string, { name: string; type: string; count: number }>();
   for (const item of items) {
     for (const e of (item.entities as { name: string; type: string }[]) || []) {
@@ -98,24 +100,16 @@ function allEntities(items: Record<string, unknown>[]) {
   return [...freq.values()].sort((a, b) => b.count - a.count).slice(0, 20);
 }
 
-// ── Story reader modal ───────────────────────────────────────────────────────
+// ── Story modal ──────────────────────────────────────────────────────────────
 
-function StoryModal({ story, onClose }: {
-  story: Record<string, unknown>;
-  onClose: () => void;
-}) {
+function StoryModal({ story, onClose }: { story: Record<string, unknown>; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-white">
       <div className="max-w-3xl mx-auto px-6 py-10">
-        <button
-          onClick={onClose}
-          className="text-xs text-gray-400 hover:text-gray-700 mb-6 inline-block"
-        >
-          ← Back to journalist page
+        <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-700 mb-6 inline-block">
+          ← Back
         </button>
-        <p className="text-xs text-gray-400 uppercase tracking-widest mb-2">
-          {story.published_at as string}
-        </p>
+        <p className="text-xs text-gray-400 uppercase tracking-widest mb-2">{story.published_at as string}</p>
         <h1 className="text-2xl font-bold leading-tight mb-3">{story.title as string}</h1>
         <p className="text-base text-gray-600 mb-6 leading-relaxed">{story.standfirst as string}</p>
         <div className="flex gap-2 mb-8 flex-wrap">
@@ -132,6 +126,122 @@ function StoryModal({ story, onClose }: {
   );
 }
 
+// ── Graph node detail panel ──────────────────────────────────────────────────
+
+function NodeDetail({
+  node,
+  journalist,
+  evidence,
+  stories,
+  onClose,
+  onReadStory,
+}: {
+  node: GraphNode;
+  journalist: Record<string, unknown>;
+  evidence: Record<string, unknown>[];
+  stories: Record<string, unknown>[];
+  onClose: () => void;
+  onReadStory: (s: Record<string, unknown>) => void;
+}) {
+  // Evidence node
+  if (node.group === 2) {
+    const evidenceId = node.id.slice(2); // strip "e-"
+    const item = evidence.find((e) => e.evidence_id === evidenceId);
+    if (!item) return null;
+    return (
+      <div className="border border-gray-200 rounded-lg p-4 mt-4 relative">
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-300 hover:text-gray-600 text-xs">✕</button>
+        <div className="flex items-start gap-2 mb-2">
+          <Badge value={item.credibility_score as number} />
+          <a href={item.source_url as string} target="_blank" rel="noopener noreferrer"
+            className="text-sm font-medium underline leading-tight">
+            {item.source_title as string}
+          </a>
+        </div>
+        <p className="text-xs text-gray-400 mb-2">{item.sub_question as string}</p>
+        {(item.claims as string[])?.length > 0 && (
+          <ul className="space-y-1 mb-3">
+            {(item.claims as string[]).map((claim, i) => (
+              <li key={i} className="text-xs text-gray-700">· {claim}</li>
+            ))}
+          </ul>
+        )}
+        {(item.entities as { name: string; type: string }[])?.length > 0 && (
+          <div className="flex gap-1 flex-wrap">
+            {(item.entities as { name: string; type: string }[]).map((e, i) => (
+              <span key={i} className="text-xs bg-gray-50 border border-gray-100 px-2 py-0.5 rounded">
+                {e.name} <span className="text-gray-300">·{e.type}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-gray-300 mt-2">
+          Credibility: {(item.credibility_score as number).toFixed(2)} — {item.credibility_notes as string}
+        </p>
+      </div>
+    );
+  }
+
+  // Entity node
+  if (node.group === 3) {
+    const entityName = node.label;
+    const related = evidence.filter((e) =>
+      (e.entities as { name: string }[])?.some(
+        (ent) => ent.name.toLowerCase() === entityName.toLowerCase(),
+      ),
+    );
+    return (
+      <div className="border border-gray-200 rounded-lg p-4 mt-4 relative">
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-300 hover:text-gray-600 text-xs">✕</button>
+        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Entity</p>
+        <h3 className="text-sm font-semibold mb-3">{entityName}</h3>
+        <p className="text-xs text-gray-500 mb-3">Appears in {related.length} evidence item{related.length !== 1 ? "s" : ""}:</p>
+        <div className="space-y-2">
+          {related.map((item) => (
+            <div key={item.evidence_id as string} className="border border-gray-100 rounded px-3 py-2">
+              <a href={item.source_url as string} target="_blank" rel="noopener noreferrer"
+                className="text-xs underline text-blue-600">{item.source_title as string}</a>
+              <p className="text-xs text-gray-400 mt-0.5">{item.sub_question as string}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Story node
+  if (node.group === 1) {
+    const storyId = node.id.slice(2); // strip "s-"
+    const story = stories.find((s) => s.story_id === storyId);
+    if (!story) return null;
+    return (
+      <div className="border border-gray-200 rounded-lg p-4 mt-4 relative">
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-300 hover:text-gray-600 text-xs">✕</button>
+        <p className="text-xs text-gray-400 mb-1">{story.published_at as string}</p>
+        <h3 className="text-sm font-semibold mb-2">{story.title as string}</h3>
+        <p className="text-xs text-gray-500 mb-3">{story.standfirst as string}</p>
+        <button onClick={() => onReadStory(story)} className="text-xs underline text-blue-600">
+          Read full article →
+        </button>
+      </div>
+    );
+  }
+
+  // Journalist node
+  if (node.group === 0) {
+    return (
+      <div className="border border-gray-200 rounded-lg p-4 mt-4 relative">
+        <button onClick={onClose} className="absolute top-3 right-3 text-gray-300 hover:text-gray-600 text-xs">✕</button>
+        <p className="text-xs text-gray-400 uppercase tracking-widest mb-1">Journalist</p>
+        <p className="text-xs text-gray-500">{journalist.jurisdiction as string} · {journalist.tier as string}</p>
+        <p className="text-sm mt-2 leading-relaxed">{journalist.mandate as string}</p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function JournalistPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -143,16 +253,21 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
   const [stories, setStories] = useState<Record<string, unknown>[]>([]);
   const [costs, setCosts] = useState<Record<string, unknown>[]>([]);
   const [tips, setTips] = useState<Record<string, unknown>[]>([]);
-  const [activeTab, setActiveTab] = useState<Tab>("mandate");
+  const [activeTab, setActiveTab] = useState<Tab>("pipeline");
   const [tipText, setTipText] = useState("");
   const [tipSubmitting, setTipSubmitting] = useState(false);
   const [tipSent, setTipSent] = useState(false);
   const [openStory, setOpenStory] = useState<Record<string, unknown> | null>(null);
 
+  // Run now
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
   // Knowledge graph
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const [graphDims, setGraphDims] = useState({ width: 800, height: 500 });
 
@@ -176,6 +291,7 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
     if (activeTab !== "graph") return;
     setGraphLoading(true);
     setGraphError(null);
+    setSelectedNode(null);
     fetch(`${EDITOR_URL}/graph/${slug}`)
       .then((r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); })
       .then((data: GraphData) => setGraphData(data))
@@ -195,11 +311,17 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
 
   const nodeCanvasObject = useCallback(
     (node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const r = Math.max(4, 6 / globalScale);
+      const isSelected = selectedNode?.id === node.id;
+      const r = Math.max(4, (isSelected ? 8 : 6) / globalScale);
       ctx.beginPath();
       ctx.arc(node.x ?? 0, node.y ?? 0, r, 0, 2 * Math.PI);
       ctx.fillStyle = NODE_COLORS[node.group] ?? "#6b7280";
       ctx.fill();
+      if (isSelected) {
+        ctx.strokeStyle = "#1d4ed8";
+        ctx.lineWidth = 2 / globalScale;
+        ctx.stroke();
+      }
       const fontSize = Math.max(8, 10 / globalScale);
       ctx.font = `${fontSize}px monospace`;
       ctx.textAlign = "center";
@@ -211,10 +333,37 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
         (node.y ?? 0) + r + fontSize,
       );
     },
-    [],
+    [selectedNode],
   );
 
   const totalCostUsd = costs.reduce((sum, c) => sum + ((c.cost_usd as number) ?? 0), 0);
+
+  async function runNow() {
+    if (!journalist) return;
+    setRunning(true);
+    setRunError(null);
+    try {
+      const res = await fetch(`${EDITOR_URL}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          journalist_id: slug,
+          mandate: journalist.mandate,
+          jurisdiction: journalist.jurisdiction,
+          tier: journalist.tier ?? "free",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? `${res.status} ${res.statusText}`);
+      }
+      setActiveTab("pipeline");
+    } catch (err) {
+      setRunError((err as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  }
 
   async function submitTip(e: React.FormEvent) {
     e.preventDefault();
@@ -237,22 +386,23 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
     return <div className="max-w-4xl mx-auto px-6 py-12 text-gray-400 text-sm animate-pulse">Loading…</div>;
   }
 
+  const cycleStatus = (journalist.cycle_status as Record<string, unknown> | undefined)?.status as string | undefined;
+
   const tabs: [Tab, string][] = [
-    ["mandate", "Mandate"],
-    ["investigation", "Investigation"],
-    ["activity", `Activity (${activity.length})`],
-    ["evidence", `Evidence (${evidence.length})`],
-    ["graph", "Knowledge Graph"],
-    ["compliance", `Compliance (${compliance.length})`],
-    ["stories", `Stories (${stories.length})`],
-    ["cost", `Cost ($${totalCostUsd.toFixed(4)})`],
-    ["tips", `Tips (${tips.length})`],
-    ["live", `Live${sseEvents.length ? ` (${sseEvents.length})` : ""}`],
+    ["pipeline",     "Pipeline"],
+    ["mandate",      "Mandate"],
+    ["investigation","Investigation"],
+    ["activity",     `Activity (${activity.length})`],
+    ["evidence",     `Evidence (${evidence.length})`],
+    ["graph",        "Knowledge Graph"],
+    ["compliance",   `Compliance (${compliance.length})`],
+    ["stories",      `Stories (${stories.length})`],
+    ["cost",         `Cost ($${totalCostUsd.toFixed(4)})`],
+    ["tips",         `Tips (${tips.length})`],
   ];
 
-  // Investigation tab derived data
   const byQuestion = groupBySubQuestion(evidence);
-  const topEntities = allEntities(evidence);
+  const entities = topEntities(evidence);
 
   return (
     <>
@@ -260,24 +410,34 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
 
       <div className="max-w-4xl mx-auto px-6 py-10">
         {/* Header */}
-        <div className="mb-6">
-          <span className="text-xs text-gray-400 uppercase tracking-widest">
-            {journalist.jurisdiction as string} · {journalist.tier as string}
-          </span>
-          <h1 className="text-xl font-bold mt-1 leading-snug">{journalist.mandate as string}</h1>
-          <p className="text-xs text-gray-400 mt-2">ID: {slug}</p>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1 min-w-0">
+            <span className="text-xs text-gray-400 uppercase tracking-widest">
+              {journalist.jurisdiction as string} · {journalist.tier as string}
+            </span>
+            <h1 className="text-xl font-bold mt-1 leading-snug">{journalist.mandate as string}</h1>
+            <p className="text-xs text-gray-400 mt-1">ID: {slug}</p>
+          </div>
+          <div className="ml-4 shrink-0 flex flex-col items-end gap-2">
+            <button
+              onClick={runNow}
+              disabled={running}
+              className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-40 transition-colors"
+            >
+              {running ? "Starting…" : "▶ Run now"}
+            </button>
+            {runError && <p className="text-xs text-red-500 max-w-xs text-right">{runError}</p>}
+          </div>
         </div>
 
         {/* Live status bar */}
         <div className="flex items-center gap-3 mb-5 text-xs">
-          <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              connected
-                ? sseStatus === "Idle" || sseStatus === "idle" ? "bg-gray-300" : "bg-green-400 animate-pulse"
-                : "bg-gray-200"
-            }`}
-          />
-          <span className="text-gray-500">{connected ? sseStatus : "Connecting to live stream…"}</span>
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            connected
+              ? cycleStatus === "idle" || !cycleStatus ? "bg-gray-300" : "bg-green-400 animate-pulse"
+              : "bg-gray-200"
+          }`} />
+          <span className="text-gray-500">{connected ? sseStatus : "Connecting…"}</span>
           <span className="text-gray-300 ml-auto">Total spend: ${totalCostUsd.toFixed(4)}</span>
         </div>
 
@@ -287,6 +447,37 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
             <TabBtn key={id} label={label} active={activeTab === id} onClick={() => setActiveTab(id)} />
           ))}
         </div>
+
+        {/* ── Pipeline ────────────────────────────────────────────────────── */}
+        {activeTab === "pipeline" && (
+          <div className="space-y-8">
+            <Section title="Cycle state machine">
+              <PipelineDiagram events={sseEvents} cycleStatus={cycleStatus} />
+            </Section>
+
+            <Section title={`Live events${sseEvents.length ? ` (${sseEvents.length})` : ""}`}>
+              <p className="text-xs text-gray-400 mb-3">
+                Real-time events from the Editor agent. Resets each page session.
+              </p>
+              {sseEvents.length === 0 && (
+                <Empty text={connected ? "Waiting for next cycle…" : "Connecting to live stream…"} />
+              )}
+              <div className="space-y-1.5">
+                {sseEvents.map((ev, i) => (
+                  <div key={i} className="border border-gray-100 rounded px-3 py-2 text-xs font-mono">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-gray-700">{ev.event}</span>
+                      <span className="text-gray-300">{ev.ts}</span>
+                    </div>
+                    <pre className="text-gray-400 whitespace-pre-wrap overflow-x-auto text-xs">
+                      {JSON.stringify(ev.data, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          </div>
+        )}
 
         {/* ── Mandate ─────────────────────────────────────────────────────── */}
         {activeTab === "mandate" && (
@@ -304,7 +495,7 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
               </p>
             </Section>
             {journalist.cycle_status && (
-              <Section title="Current cycle status">
+              <Section title="Cycle status">
                 <pre className="text-xs text-gray-500 whitespace-pre-wrap">
                   {JSON.stringify(journalist.cycle_status, null, 2)}
                 </pre>
@@ -313,17 +504,14 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
           </div>
         )}
 
-        {/* ── Investigation — glass window into the AI's work ──────────────── */}
+        {/* ── Investigation ────────────────────────────────────────────────── */}
         {activeTab === "investigation" && (
           <div className="space-y-8">
-            {evidence.length === 0 && (
-              <Empty text="No investigation data yet — run a cycle to see findings here." />
-            )}
+            {evidence.length === 0 && <Empty text="No investigation data yet — run a cycle first." />}
 
-            {/* Sub-question breakdown */}
             {byQuestion.size > 0 && (
               <Section title={`Research questions (${byQuestion.size})`}>
-                <div className="space-y-6 mt-2">
+                <div className="space-y-5 mt-2">
                   {[...byQuestion.entries()].map(([question, items]) => (
                     <div key={question} className="border border-gray-100 rounded p-4">
                       <p className="text-sm font-medium text-gray-800 mb-3">❓ {question}</p>
@@ -332,12 +520,8 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                           <div key={item.evidence_id as string}>
                             <div className="flex items-start gap-2">
                               <Badge value={item.credibility_score as number} />
-                              <a
-                                href={item.source_url as string}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-blue-600 underline truncate max-w-sm"
-                              >
+                              <a href={item.source_url as string} target="_blank" rel="noopener noreferrer"
+                                className="text-xs text-blue-600 underline truncate max-w-sm">
                                 {item.source_title as string}
                               </a>
                             </div>
@@ -357,24 +541,19 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
               </Section>
             )}
 
-            {/* Entity cross-references */}
-            {topEntities.length > 0 && (
+            {entities.length > 0 && (
               <Section title="Who and what keeps coming up">
                 <p className="text-xs text-gray-400 mb-3">
-                  Entities appearing across multiple sources — the recurring actors in this investigation.
+                  Entities appearing across multiple sources.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {topEntities.map((e) => (
-                    <span
-                      key={e.name}
-                      className="inline-flex items-center gap-1.5 text-xs border border-gray-200 rounded px-2 py-1"
-                    >
+                  {entities.map((e) => (
+                    <span key={e.name}
+                      className="inline-flex items-center gap-1.5 text-xs border border-gray-200 rounded px-2 py-1">
                       <span>{e.name}</span>
                       <span className="text-gray-300">·{e.type}</span>
                       {e.count > 1 && (
-                        <span className="bg-gray-100 text-gray-500 rounded-full px-1.5 text-xs">
-                          ×{e.count}
-                        </span>
+                        <span className="bg-gray-100 text-gray-500 rounded-full px-1.5">×{e.count}</span>
                       )}
                     </span>
                   ))}
@@ -382,7 +561,6 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
               </Section>
             )}
 
-            {/* Latest published story */}
             {stories.length > 0 && (
               <Section title="Latest published article">
                 {stories.slice(0, 1).map((story) => (
@@ -390,10 +568,7 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                     <p className="text-xs text-gray-400 mb-1">{story.published_at as string}</p>
                     <h3 className="text-sm font-semibold mb-1">{story.title as string}</h3>
                     <p className="text-xs text-gray-500 mb-3">{story.standfirst as string}</p>
-                    <button
-                      onClick={() => setOpenStory(story)}
-                      className="text-xs underline text-blue-600"
-                    >
+                    <button onClick={() => setOpenStory(story)} className="text-xs underline text-blue-600">
                       Read full article →
                     </button>
                   </div>
@@ -430,12 +605,8 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                 <div className="flex items-start justify-between">
                   <div>
                     <Badge value={item.credibility_score as number} />
-                    <a
-                      href={item.source_url as string}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium underline"
-                    >
+                    <a href={item.source_url as string} target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-medium underline">
                       {item.source_title as string}
                     </a>
                     <p className="text-xs text-gray-400 mt-1">{item.sub_question as string}</p>
@@ -468,15 +639,17 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
         {/* ── Knowledge Graph ───────────────────────────────────────────────── */}
         {activeTab === "graph" && (
           <div>
-            <div className="flex flex-wrap gap-4 mb-4 text-xs text-gray-500">
+            {/* Legend + hint */}
+            <div className="flex flex-wrap items-center gap-4 mb-3 text-xs text-gray-500">
               {([["Journalist", 0], ["Story", 1], ["Evidence", 2], ["Entity", 3]] as [string, number][]).map(
                 ([label, group]) => (
                   <span key={label} className="flex items-center gap-1.5">
                     <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: NODE_COLORS[group] }} />
                     {label}
                   </span>
-                )
+                ),
               )}
+              <span className="ml-auto text-gray-300">Click a node to inspect</span>
             </div>
 
             {graphLoading && <p className="text-gray-400 text-sm">Building graph from evidence…</p>}
@@ -484,10 +657,11 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
             {!graphLoading && !graphError && graphData.nodes.length === 0 && (
               <Empty text="No graph data yet — run an investigation cycle first." />
             )}
+
             {!graphLoading && !graphError && graphData.nodes.length > 0 && (
               <div
                 ref={graphContainerRef}
-                className="border border-gray-100 rounded overflow-hidden bg-gray-50"
+                className="border border-gray-100 rounded overflow-hidden bg-gray-50 cursor-pointer"
                 style={{ height: graphDims.height }}
               >
                 <ForceGraph2D
@@ -503,18 +677,32 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                   nodePointerAreaPaint={(node: GraphNode, color, ctx) => {
                     ctx.fillStyle = color;
                     ctx.beginPath();
-                    ctx.arc(node.x ?? 0, node.y ?? 0, 8, 0, 2 * Math.PI);
+                    ctx.arc(node.x ?? 0, node.y ?? 0, 10, 0, 2 * Math.PI);
                     ctx.fill();
                   }}
+                  onNodeClick={(node) => setSelectedNode(node as GraphNode)}
                   enableNodeDrag
                   cooldownTicks={80}
                 />
               </div>
             )}
+
             {!graphLoading && (
-              <p className="text-xs text-gray-300 mt-2">
+              <p className="text-xs text-gray-300 mt-1.5">
                 {graphData.nodes.length} nodes · {graphData.links.length} relationships
               </p>
+            )}
+
+            {/* Node detail panel */}
+            {selectedNode && (
+              <NodeDetail
+                node={selectedNode}
+                journalist={journalist}
+                evidence={evidence}
+                stories={stories}
+                onClose={() => setSelectedNode(null)}
+                onReadStory={(s) => { setOpenStory(s); setSelectedNode(null); }}
+              />
             )}
           </div>
         )}
@@ -524,10 +712,8 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
           <div className="space-y-3">
             {compliance.length === 0 && <Empty text="No compliance checks yet." />}
             {compliance.map((entry) => (
-              <div
-                key={entry.id as string}
-                className={`border rounded px-4 py-3 text-xs ${entry.passed ? "border-green-200" : "border-red-200"}`}
-              >
+              <div key={entry.id as string}
+                className={`border rounded px-4 py-3 text-xs ${entry.passed ? "border-green-200" : "border-red-200"}`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className={`font-medium ${entry.passed ? "text-green-700" : "text-red-600"}`}>
                     {entry.passed ? "PASSED" : "FAILED"} — {entry.check_type as string}
@@ -559,10 +745,7 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                     <span key={tag} className="text-xs bg-gray-100 px-2 py-0.5 rounded">{tag}</span>
                   ))}
                 </div>
-                <button
-                  onClick={() => setOpenStory(story)}
-                  className="text-xs underline text-blue-600"
-                >
+                <button onClick={() => setOpenStory(story)} className="text-xs underline text-blue-600">
                   Read full article →
                 </button>
               </div>
@@ -609,27 +792,19 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
           <div className="space-y-6">
             <Section title="Submit a tip or correction">
               <p className="text-xs text-gray-400 mb-3">
-                Tips are cross-checked against the evidence locker by the Verification Agent.
-                They have zero editorial influence. All tips and responses are public.
+                Tips are cross-checked against the evidence locker. Zero editorial influence. All public.
               </p>
               {tipSent ? (
-                <p className="text-green-600 text-sm">
-                  Tip received. The Verification Agent will assess it against the evidence locker.
-                </p>
+                <p className="text-green-600 text-sm">Tip received. The Verification Agent will assess it.</p>
               ) : (
                 <form onSubmit={submitTip} className="space-y-3">
-                  <textarea
-                    value={tipText}
-                    onChange={(e) => setTipText(e.target.value)}
+                  <textarea value={tipText} onChange={(e) => setTipText(e.target.value)}
                     placeholder="Describe the tip, correction, or additional evidence…"
                     rows={4}
                     className="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono resize-none focus:outline-none focus:border-gray-400"
                   />
-                  <button
-                    type="submit"
-                    disabled={tipSubmitting || !tipText.trim()}
-                    className="px-4 py-2 text-xs bg-gray-900 text-white rounded disabled:opacity-40"
-                  >
+                  <button type="submit" disabled={tipSubmitting || !tipText.trim()}
+                    className="px-4 py-2 text-xs bg-gray-900 text-white rounded disabled:opacity-40">
                     {tipSubmitting ? "Submitting…" : "Submit tip"}
                   </button>
                 </form>
@@ -642,13 +817,11 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                   <p className="text-gray-700 mb-2">{tip.content as string}</p>
                   <p className="text-gray-300">{tip.submitted_at as string}</p>
                   {tip.verification && (
-                    <div
-                      className={`mt-3 pt-3 border-t text-xs ${
-                        (tip.verification as Record<string, unknown>).corroborated
-                          ? "border-green-100 text-green-700"
-                          : "border-gray-100 text-gray-500"
-                      }`}
-                    >
+                    <div className={`mt-3 pt-3 border-t text-xs ${
+                      (tip.verification as Record<string, unknown>).corroborated
+                        ? "border-green-100 text-green-700"
+                        : "border-gray-100 text-gray-500"
+                    }`}>
                       <p className="font-medium mb-1">
                         {(tip.verification as Record<string, unknown>).corroborated
                           ? "Corroborated by evidence"
@@ -660,27 +833,6 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                 </div>
               ))}
             </Section>
-          </div>
-        )}
-
-        {/* ── Live SSE Feed ──────────────────────────────────────────────────── */}
-        {activeTab === "live" && (
-          <div className="space-y-2">
-            <p className="text-xs text-gray-400 mb-4">
-              Real-time events from the Editor agent — before they land in Firestore.
-            </p>
-            {sseEvents.length === 0 && <Empty text={connected ? "Waiting for next cycle…" : "Connecting…"} />}
-            {sseEvents.map((ev, i) => (
-              <div key={i} className="border border-gray-100 rounded px-4 py-3 text-xs font-mono">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-gray-700">{ev.event}</span>
-                  <span className="text-gray-300">{ev.ts}</span>
-                </div>
-                <pre className="text-gray-400 whitespace-pre-wrap overflow-x-auto">
-                  {JSON.stringify(ev.data, null, 2)}
-                </pre>
-              </div>
-            ))}
           </div>
         )}
       </div>
