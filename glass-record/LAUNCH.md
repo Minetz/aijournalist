@@ -89,10 +89,10 @@ Ensure the account has `roles/aiplatform.user` (Terraform grants this automatica
 Set in `.env`:
 ```
 GOOGLE_GENAI_USE_VERTEXAI=true
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-3.1-pro-preview
 ```
 
-> **Model note:** `gemini-2.0-flash` is required for Google Search grounding, which the
+> **Model note:** `gemini-3.1-pro-preview` supports Google Search grounding, which the
 > Researcher agent uses instead of a separate search API + Playwright scraper.
 >
 > **Cost note:** Gemini 2.0 Flash costs $0.10/1M input, $0.40/1M output tokens.

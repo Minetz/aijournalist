@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    gemini_model: str = "gemini-1.5-pro-002"
+    gemini_model: str = "gemini-3.1-pro-preview"
     google_cloud_project: str = "glass-record-dev"
     google_genai_use_vertexai: bool = True
 

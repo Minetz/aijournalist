@@ -4,9 +4,7 @@ Cost tracking for Gemini API calls.
 Uses a LangChain callback to intercept token counts from every LLM response,
 accumulates them per cycle, and flushes a cost ledger entry to Firestore.
 
-Gemini 1.5 Pro pricing (as of 2025, prompts ≤128k tokens):
-  Input:  $3.50 / 1M tokens
-  Output: $10.50 / 1M tokens
+Verify current pricing at https://cloud.google.com/vertex-ai/generative-ai/pricing
 """
 import datetime
 from typing import Any
@@ -18,11 +16,12 @@ from langchain_core.outputs import LLMResult
 
 log = structlog.get_logger()
 
-# USD per 1M tokens — update when pricing changes
+# USD per 1M tokens — verify at https://cloud.google.com/vertex-ai/generative-ai/pricing
 _PRICING: dict[str, dict[str, float]] = {
-    "gemini-1.5-pro-002":   {"input": 3.50,  "output": 10.50},
-    "gemini-1.5-flash-002": {"input": 0.075, "output": 0.30},
-    "gemini-2.0-flash":     {"input": 0.10,  "output": 0.40},
+    "gemini-3.1-pro-preview": {"input": 3.50,  "output": 10.50},  # verify pricing
+    "gemini-1.5-pro-002":     {"input": 3.50,  "output": 10.50},
+    "gemini-1.5-flash-002":   {"input": 0.075, "output": 0.30},
+    "gemini-2.0-flash":       {"input": 0.10,  "output": 0.40},
 }
 _DEFAULT_PRICING = {"input": 3.50, "output": 10.50}
 
