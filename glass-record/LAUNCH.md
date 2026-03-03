@@ -135,7 +135,6 @@ NEXT_PUBLIC_EDITOR_URL=https://glass-record-editor-<project-hash>.us-central1.ru
 ```bash
 cd glass-record
 uv sync
-uv run playwright install chromium  # only needed for local runs; Docker handles this in prod
 ```
 
 To also enable the MCP log-access server for Claude Code:
@@ -164,7 +163,7 @@ cp .env.example .env
 # Leave FIRESTORE_EMULATOR_HOST=localhost:8080 for local dev
 ```
 
-### 4e. Start the Editor service
+### 4d. Start the Editor service
 
 ```bash
 FIRESTORE_EMULATOR_HOST=localhost:8080 \
@@ -172,6 +171,46 @@ FIRESTORE_EMULATOR_HOST=localhost:8080 \
 ```
 
 Health check: `curl http://localhost:8000/health` → `{"status":"ok"}`
+
+### 4e. Start the Researcher service (optional — local mode only)
+
+In development, `RESEARCHER_MODE=local` (the default) means the Editor spawns
+researcher workers in-process using LangGraph `Send()`. You do **not** need to
+run the Researcher service separately.
+
+If you want to test the Researcher in isolation (e.g. to develop the
+`grounded_research` node), run it on port 8001:
+
+```bash
+FIRESTORE_EMULATOR_HOST=localhost:8080 \
+  uv run uvicorn agents.researcher.main:app --reload --port 8001
+```
+
+Health check: `curl http://localhost:8001/health` → `{"status":"ok"}`
+
+Test a single sub-question manually:
+
+```bash
+curl -X POST http://localhost:8001/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "journalist_id": "un-xxxxxxxx",
+    "mandate": "Investigate human rights implications of UN Security Council veto use.",
+    "jurisdiction": "UN",
+    "tier": "free",
+    "sub_question": "How many Security Council vetoes were cast between 2022 and 2024?",
+    "cycle_id": "test-cycle-001"
+  }'
+```
+
+Response: `{"status": "ok", "evidence_ids": ["abc123...", ...]}`
+
+Evidence items are written to Firestore `evidence_locker` and raw text to GCS.
+
+> **Pub/Sub mode (production):** Set `RESEARCHER_MODE=pubsub`. The Editor publishes
+> one Pub/Sub message per sub-question; Cloud Run auto-scales Researcher instances
+> to process them in parallel. Terraform provisions the topic, subscription, and
+> Cloud Run service automatically (section 6).
 
 ### 4f. Run tests
 
