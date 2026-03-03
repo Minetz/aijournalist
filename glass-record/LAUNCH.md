@@ -503,7 +503,7 @@ Supported jurisdictions: `UN`, `EU`, `ICC`, `ICJ`, `US_FEDERAL`, `NATO`, `WORLD_
 | `GOOGLE_CLOUD_PROJECT` | Yes | GCP project ID |
 | `GOOGLE_GENAI_USE_VERTEXAI` | Yes | Must be `true` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Local only | Path to service account JSON |
-| `GEMINI_MODEL` | Yes | `gemini-2.0-flash` (required for Search grounding) |
+| `GEMINI_MODEL` | Yes | `gemini-3.1-pro-preview` (required for Search grounding) |
 | `FIRESTORE_EMULATOR_HOST` | Dev only | `localhost:8080` — remove in prod |
 | `GCS_EVIDENCE_BUCKET` | Yes | Set by Terraform; `glass-record-evidence-{env}` |
 | `PUBSUB_RESEARCHER_TOPIC` | Prod only | Set by Terraform |
@@ -673,10 +673,10 @@ Tips flow:
 | Pub/Sub | 10 GB/month | ~$0 |
 | Artifact Registry | 0.5 GB free | ~$0.10 |
 | Cloud Storage | 5 GB free | ~$0 |
-| Vertex AI (Gemini 2.0 Flash) | Pay per token | ~$0.10–$1/day |
+| Vertex AI (Gemini 3.1 Pro Preview) | Pay per token | ~$0.10–$1/day |
 | Gemini Search grounding | $35/1000 queries | ~$0.02–$0.05/cycle |
 | Firebase App Hosting | Generous free tier | ~$0 |
 | **Total** | | **~$0–$2/month + Gemini** |
 
-> Gemini 2.0 Flash is significantly cheaper than 1.5 Pro and supports Search grounding
-> natively. No Ghost VM, no Neo4j, no Custom Search Engine API costs.
+> Gemini 3.1 Pro Preview supports Search grounding natively.
+> No Ghost VM, no Neo4j, no Custom Search Engine API costs.
