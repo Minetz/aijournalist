@@ -136,7 +136,7 @@ locals {
   shared_env_vars = {
     GOOGLE_CLOUD_PROJECT      = var.project_id
     GOOGLE_GENAI_USE_VERTEXAI = "true"
-    GEMINI_MODEL              = "gemini-1.5-pro-002"
+    GEMINI_MODEL              = "gemini-3.1-pro-preview"
     GCS_EVIDENCE_BUCKET       = google_storage_bucket.evidence.name
     PUBSUB_RESEARCHER_TOPIC   = module.pubsub.researcher_topic_name
   }
