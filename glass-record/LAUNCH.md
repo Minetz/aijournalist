@@ -362,6 +362,10 @@ Pipeline: unit tests → build base image → build editor + researcher images (
 
 ## 8. Firebase App Hosting (dashboard)
 
+The dashboard is a Next.js app deployed via Firebase App Hosting.
+`apphosting.yaml` pulls all 7 config values from Secret Manager at build
+and runtime — no `.env` files are needed in production.
+
 ### 8a. Deploy Firestore security rules
 
 ```bash
@@ -369,41 +373,98 @@ cd glass-record
 firebase deploy --only firestore:rules --project=glass-record-prod
 ```
 
-### 8b. Store dashboard secrets in Secret Manager
+### 8b. Store all dashboard secrets in Secret Manager
+
+Run this once after your Firebase project and Cloud Run service exist.
+The values come from **Firebase Console → Project Settings → Your Apps →
+Web App → SDK setup and configuration** (Config radio button).
 
 ```bash
-echo -n "glass-record-prod" | \
-  gcloud secrets create FIREBASE_PROJECT_ID --data-file=- --project=glass-record-prod
+PROJECT=glass-record-prod
 
-# Get Cloud Run Editor URL after Terraform apply:
+# ── Firebase web-app config ───────────────────────────────────────────────
+# (replace each placeholder with the real value from the Firebase console)
+
+echo -n "AIzaSy…"                         | gcloud secrets create FIREBASE_API_KEY            --data-file=- --project=$PROJECT
+echo -n "${PROJECT}.firebaseapp.com"       | gcloud secrets create FIREBASE_AUTH_DOMAIN         --data-file=- --project=$PROJECT
+echo -n "$PROJECT"                         | gcloud secrets create FIREBASE_PROJECT_ID          --data-file=- --project=$PROJECT
+echo -n "${PROJECT}.appspot.com"           | gcloud secrets create FIREBASE_STORAGE_BUCKET      --data-file=- --project=$PROJECT
+echo -n "123456789012"                     | gcloud secrets create FIREBASE_MESSAGING_SENDER_ID --data-file=- --project=$PROJECT
+echo -n "1:123456789012:web:abc123def456"  | gcloud secrets create FIREBASE_APP_ID              --data-file=- --project=$PROJECT
+
+# ── Editor Cloud Run URL ──────────────────────────────────────────────────
 EDITOR_URL=$(gcloud run services describe glass-record-editor \
-  --region=us-central1 --format='value(status.url)')
+  --region=us-central1 --project=$PROJECT --format='value(status.url)')
 
-echo -n "$EDITOR_URL" | \
-  gcloud secrets create EDITOR_SERVICE_URL --data-file=- --project=glass-record-prod
+echo -n "$EDITOR_URL" | gcloud secrets create EDITOR_SERVICE_URL --data-file=- --project=$PROJECT
 ```
 
-### 8c. Deploy App Hosting backend
+> **Updating a secret later** — use `versions add` instead of `create`:
+> ```bash
+> echo -n "new-value" | gcloud secrets versions add SECRET_NAME --data-file=- --project=$PROJECT
+> ```
+
+### 8c. Grant App Hosting access to the secrets
+
+Firebase App Hosting runs as a dedicated service account. Grant it
+`secretAccessor` on every secret created above:
 
 ```bash
+PROJECT=glass-record-prod
+
+# Find the App Hosting service account (created automatically on first deploy)
+SA=$(gcloud projects get-iam-policy $PROJECT \
+  --flatten="bindings[].members" \
+  --filter="bindings.role=roles/firebase.sdkAdminServiceAgent" \
+  --format="value(bindings.members)" | head -1)
+
+# Fallback: it's usually firebase-app-hosting-<hash>@<project>.iam.gserviceaccount.com
+# You can also find it in: Firebase Console → App Hosting → Backend → Service account
+
+for SECRET in FIREBASE_API_KEY FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_ID \
+              FIREBASE_STORAGE_BUCKET FIREBASE_MESSAGING_SENDER_ID \
+              FIREBASE_APP_ID EDITOR_SERVICE_URL; do
+  gcloud secrets add-iam-policy-binding $SECRET \
+    --member="$SA" \
+    --role="roles/secretmanager.secretAccessor" \
+    --project=$PROJECT
+done
+```
+
+### 8d. Create the App Hosting backend and deploy
+
+```bash
+cd glass-record
+
+# One-time: create the backend (links this repo to Firebase App Hosting)
 firebase apphosting:backends:create \
   --project=glass-record-prod \
   --location=us-central1
 
-# Point it to the dashboard directory:
-firebase deploy --only hosting --project=glass-record-prod
+# Deploy (picks up apphosting.yaml automatically)
+firebase deploy --only apphosting --project=glass-record-prod
 ```
 
-Dashboard will be available at:
+Dashboard will be live at:
 ```
 https://glass-record-prod.web.app
 https://glass-record-prod.firebaseapp.com
 ```
 
+### 8e. Local development
+
+```bash
+cd glass-record/dashboard
+cp .env.local.example .env.local
+# Fill in real values from Firebase Console → Project Settings → Your Apps
+npm install
+npm run dev   # http://localhost:3000
+# Set NEXT_PUBLIC_EDITOR_URL=http://localhost:8000 for local Editor
+```
+
 Custom domain (optional):
 ```bash
-firebase hosting:channel:deploy prod --project=glass-record-prod
-# Then add CNAME at your DNS registrar pointing to Firebase Hosting
+# Firebase Console → Hosting → Add custom domain, then add CNAME at your DNS registrar
 ```
 
 ---
