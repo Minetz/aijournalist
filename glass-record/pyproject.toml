@@ -58,4 +58,4 @@ strict = true
 asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
-include = ["agents*"]
+include = ["agents*", "tools*"]
