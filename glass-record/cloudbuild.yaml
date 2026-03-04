@@ -100,7 +100,7 @@ steps:
       - --image=$_AR_REGION-docker.pkg.dev/$PROJECT_ID/$_AR_REPO/editor:$_TAG
       - --region=$_REGION
       - --platform=managed
-      - --no-allow-unauthenticated
+      - --allow-unauthenticated
       - --service-account=glass-record-agent@$PROJECT_ID.iam.gserviceaccount.com
       - --set-env-vars=GCP_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-3.1-pro-preview
       - --min-instances=0

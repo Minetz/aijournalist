@@ -2,6 +2,7 @@ import uuid
 
 import structlog
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from agents.editor.events import emit, subscribe
@@ -16,6 +17,12 @@ from agents.verification.main import router as tips_router
 from google.cloud import firestore
 
 app = FastAPI(title="glass-record-editor", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 app.include_router(spawn_router)
 app.include_router(tips_router)
 app.include_router(graph_router)
