@@ -90,8 +90,14 @@ async def grounded_research(state: ResearcherState) -> dict:
     llm = get_llm(temperature=0.0)
     extraction = await llm.ainvoke([HumanMessage(content=extract_prompt)])
 
+    raw_content = extraction.content
+    if isinstance(raw_content, list):
+        raw_content = "".join(
+            part["text"] if isinstance(part, dict) else str(part)
+            for part in raw_content
+        )
     try:
-        findings = json.loads(extraction.content)
+        findings = json.loads(raw_content)
     except json.JSONDecodeError:
         log.warning("evidence_extraction_failed", sub_question=sub_question)
         findings = {"findings": []}
