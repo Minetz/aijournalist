@@ -29,11 +29,45 @@ app.include_router(graph_router)
 log = structlog.get_logger()
 
 
+async def _load_resume_state(db: firestore.AsyncClient, journalist_id: str) -> dict:
+    """Return pre-computed story/sub_questions from the most recent activity log cycle."""
+    entries_snap = await (
+        db.collection("journalists")
+        .document(journalist_id)
+        .collection("activity_log")
+        .order_by("timestamp", direction=firestore.Query.DESCENDING)
+        .limit(50)
+        .get()
+    )
+    entries = [e.to_dict() for e in entries_snap]
+
+    story_entry = next((e for e in entries if e["action"] == "story_selected"), None)
+    if not story_entry:
+        return {}
+
+    cycle_id = story_entry["cycle_id"]
+    mandate_entry = next(
+        (e for e in entries
+         if e["action"] == "mandate_decomposed" and e["cycle_id"] == cycle_id),
+        None,
+    )
+
+    result: dict = {"selected_story": story_entry["data"]["story_title"]}
+    if mandate_entry:
+        result["sub_questions"] = mandate_entry["data"]["sub_questions"]
+    return result
+
+
 @app.post("/run")
-async def run_cycle(config: JournalistConfig) -> dict:
-    """Trigger one investigation cycle for a journalist."""
+async def run_cycle(config: JournalistConfig, resume: bool = False) -> dict:
+    """Trigger one investigation cycle for a journalist.
+
+    Pass ?resume=true to skip story selection and mandate decomposition,
+    reusing the outputs from the most recent cycle logged in Firestore.
+    """
     cycle_id = str(uuid.uuid4())
-    log.info("cycle_start", journalist_id=config.journalist_id, cycle_id=cycle_id)
+    log.info("cycle_start", journalist_id=config.journalist_id, cycle_id=cycle_id,
+             resume=resume)
 
     db = firestore.AsyncClient()
     await register_journalist(
@@ -43,6 +77,13 @@ async def run_cycle(config: JournalistConfig) -> dict:
         jurisdiction=config.jurisdiction,
         tier=config.tier,
     )
+
+    resume_state: dict = {}
+    if resume:
+        resume_state = await _load_resume_state(db, config.journalist_id)
+        log.info("cycle_resuming", journalist_id=config.journalist_id,
+                 has_story=bool(resume_state.get("selected_story")),
+                 has_sub_questions=bool(resume_state.get("sub_questions")))
 
     settings = get_settings()
     cost_cb = CostCallbackHandler(
@@ -54,8 +95,8 @@ async def run_cycle(config: JournalistConfig) -> dict:
     graph = build_graph()
     initial_state = EditorState(
         config=config,
-        selected_story="",
-        sub_questions=[],
+        selected_story=resume_state.get("selected_story", ""),
+        sub_questions=resume_state.get("sub_questions", []),
         researcher_results=[],
         compliance_passed=False,
         cycle_id=cycle_id,

@@ -123,7 +123,7 @@ steps:
       - --platform=managed
       - --no-allow-unauthenticated
       - --service-account=glass-record-agent@$PROJECT_ID.iam.gserviceaccount.com
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-3.1-pro-preview,RESEARCHER_MODE=pubsub
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GEMINI_MODEL=gemini-3.1-pro-preview,RESEARCHER_MODE=pubsub,GCS_EVIDENCE_BUCKET=glass-record-evidence-$_ENV
       - --min-instances=0
       - --max-instances=50
       - --memory=4Gi
@@ -136,6 +136,7 @@ substitutions:
   _AR_REPO: agents
   _REGION: us-central1
   _TAG: manual
+  _ENV: prod
 
 options:
   logging: CLOUD_LOGGING_ONLY

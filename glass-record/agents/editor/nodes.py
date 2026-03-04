@@ -54,6 +54,19 @@ async def select_story(state: EditorState) -> dict:
     emit(journalist_id, "cycle_start", {"cycle_id": cycle_id})
     await _set_cycle_status(db, journalist_id, "selecting_story", cycle_id)
 
+    # Resume path: story was pre-loaded from a prior cycle's activity log
+    if state.get("selected_story"):
+        emit(journalist_id, "story_selected", {
+            "title": state["selected_story"],
+            "urgency_score": 0,
+            "cycle_id": cycle_id,
+            "resumed": True,
+        })
+        await _set_cycle_status(db, journalist_id, "story_selected", cycle_id,
+                                {"story_title": state["selected_story"]})
+        log.info("story_selection_skipped_resume", title=state["selected_story"])
+        return {}
+
     # Always load mandate from Firestore — never trust the request payload
     journalist_doc = await get_journalist_doc(db, journalist_id)
     mandate = journalist_doc["mandate"]
@@ -101,6 +114,18 @@ async def decompose_mandate(state: EditorState) -> dict:
     journalist_id = state["config"].journalist_id
     cycle_id = state["cycle_id"]
     db = firestore.AsyncClient()
+
+    # Resume path: sub_questions were pre-loaded from a prior cycle's activity log
+    if state.get("sub_questions"):
+        emit(journalist_id, "mandate_decomposed", {
+            "sub_questions": state["sub_questions"],
+            "count": len(state["sub_questions"]),
+            "resumed": True,
+        })
+        await _set_cycle_status(db, journalist_id, "researching", cycle_id,
+                                {"sub_question_count": len(state["sub_questions"])})
+        log.info("mandate_decomposition_skipped_resume", count=len(state["sub_questions"]))
+        return {}
 
     emit(journalist_id, "llm_call", {"step": "decompose_mandate", "model": "gemini"})
     await _set_cycle_status(db, journalist_id, "decomposing_mandate", cycle_id)
