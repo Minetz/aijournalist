@@ -45,7 +45,7 @@ async def grounded_research(state: ResearcherState) -> dict:
     client = genai.Client(
         vertexai=settings.google_genai_use_vertexai,
         project=settings.google_cloud_project,
-        location="us-central1",
+        location="global",
     )
 
     search_prompt = (
