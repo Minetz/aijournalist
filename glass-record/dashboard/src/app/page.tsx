@@ -34,7 +34,7 @@ export default function HomePage() {
 
   useEffect(() => {
     getAllJournalists().then((data) => {
-      setJournalists(data as Journalist[]);
+      setJournalists(data as unknown as Journalist[]);
       setLoading(false);
       // Auto-open spawn form if no journalists yet
       if (data.length === 0) setShowSpawn(true);

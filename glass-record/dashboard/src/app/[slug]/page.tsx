@@ -674,12 +674,12 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                   linkDirectionalArrowLength={4}
                   linkDirectionalArrowRelPos={1}
                   nodeCanvasObject={nodeCanvasObject as any}
-                  nodePointerAreaPaint={(node: GraphNode, color, ctx) => {
+                  nodePointerAreaPaint={((node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
                     ctx.fillStyle = color;
                     ctx.beginPath();
                     ctx.arc(node.x ?? 0, node.y ?? 0, 10, 0, 2 * Math.PI);
                     ctx.fill();
-                  }}
+                  }) as any}
                   onNodeClick={(node) => setSelectedNode(node as GraphNode)}
                   enableNodeDrag
                   cooldownTicks={80}
@@ -816,7 +816,7 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                 <div key={tip.id as string} className="border border-gray-100 rounded px-4 py-3 text-xs mb-3">
                   <p className="text-gray-700 mb-2">{tip.content as string}</p>
                   <p className="text-gray-300">{tip.submitted_at as string}</p>
-                  {tip.verification && (
+                  {tip.verification != null && (
                     <div className={`mt-3 pt-3 border-t text-xs ${
                       (tip.verification as Record<string, unknown>).corroborated
                         ? "border-green-100 text-green-700"
