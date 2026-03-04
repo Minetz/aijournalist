@@ -494,7 +494,7 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                 {journalist.created_at ? new Date(journalist.created_at as string).toUTCString() : "—"}
               </p>
             </Section>
-            {journalist.cycle_status && (
+            {journalist.cycle_status != null && (
               <Section title="Cycle status">
                 <pre className="text-xs text-gray-500 whitespace-pre-wrap">
                   {JSON.stringify(journalist.cycle_status, null, 2)}
