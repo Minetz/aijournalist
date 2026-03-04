@@ -46,8 +46,7 @@ env:
       - BUILD
       - RUNTIME
 
-  - variable: NEXT_PUBLIC_EDITOR_URL
+  - variable: EDITOR_URL
     secret: EDITOR_SERVICE_URL
     availability:
-      - BUILD
       - RUNTIME
