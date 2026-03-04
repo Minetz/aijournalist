@@ -271,7 +271,7 @@ export default function JournalistPage({ params }: { params: { slug: string } })
   const [graphDims, setGraphDims] = useState({ width: 800, height: 500 });
 
   const { events: sseEvents, status: sseStatus, connected } = useSSE(slug);
-  const EDITOR_URL = process.env.NEXT_PUBLIC_EDITOR_URL ?? "http://localhost:8000";
+  const EDITOR_URL = "/api/editor";
 
   useEffect(() => {
     const unsubs = [

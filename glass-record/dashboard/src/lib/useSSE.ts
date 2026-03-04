@@ -8,8 +8,7 @@ export interface CycleEvent {
   ts: string;
 }
 
-const EDITOR_URL =
-  process.env.NEXT_PUBLIC_EDITOR_URL ?? "http://localhost:8000";
+const EDITOR_URL = "/api/editor";
 
 /**
  * Subscribe to the Editor service's SSE stream for a journalist.
