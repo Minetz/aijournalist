@@ -115,7 +115,13 @@ async def decompose_mandate(state: EditorState) -> dict:
         jurisdiction=journalist_doc["jurisdiction"],
     )
     response = await llm.ainvoke([HumanMessage(content=prompt)])
-    sub_questions: list[str] = json.loads(response.content)
+    content = response.content
+    if isinstance(content, list):
+        content = "".join(
+            part["text"] if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    sub_questions: list[str] = json.loads(content)
 
     await log_action(db, journalist_id, cycle_id, "mandate_decomposed",
                      {"sub_questions": sub_questions, "count": len(sub_questions)})
