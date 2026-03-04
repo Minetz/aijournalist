@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { use } from "react";
 import dynamic from "next/dynamic";
 import {
   subscribeToJournalist,
@@ -244,8 +243,8 @@ function NodeDetail({
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
-export default function JournalistPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = use(params);
+export default function JournalistPage({ params }: { params: { slug: string } }) {
+  const { slug } = params;
   const [journalist, setJournalist] = useState<Record<string, unknown> | null>(null);
   const [activity, setActivity] = useState<Record<string, unknown>[]>([]);
   const [evidence, setEvidence] = useState<Record<string, unknown>[]>([]);
