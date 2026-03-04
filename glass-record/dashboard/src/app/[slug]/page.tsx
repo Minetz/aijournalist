@@ -673,7 +673,7 @@ export default function JournalistPage({ params }: { params: Promise<{ slug: str
                   linkColor={() => "#d1d5db"}
                   linkDirectionalArrowLength={4}
                   linkDirectionalArrowRelPos={1}
-                  nodeCanvasObject={nodeCanvasObject as Parameters<typeof ForceGraph2D>[0]["nodeCanvasObject"]}
+                  nodeCanvasObject={nodeCanvasObject as any}
                   nodePointerAreaPaint={(node: GraphNode, color, ctx) => {
                     ctx.fillStyle = color;
                     ctx.beginPath();
