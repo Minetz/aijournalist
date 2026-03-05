@@ -12,8 +12,12 @@ class JournalistConfig(BaseModel):
     tier: str = "free"  # "free" | "paid"
 
 
+def _keep_last(a, b):
+    return b
+
+
 class EditorState(TypedDict):
-    config: JournalistConfig
+    config: Annotated[JournalistConfig, _keep_last]
     selected_story: str
     sub_questions: list[str]
     researcher_results: Annotated[list[dict], operator.add]  # reduced from parallel workers
