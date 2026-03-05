@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { getAllJournalists } from "@/lib/firebase";
 
 const JURISDICTIONS = ["UN", "EU", "ICC", "ICJ", "US_FEDERAL", "NATO", "WORLD_BANK", "ECHR"];
-const EDITOR_URL = process.env.NEXT_PUBLIC_EDITOR_URL ?? "http://localhost:8000";
 
 interface Journalist {
   id: string;
@@ -50,7 +49,7 @@ export default function HomePage() {
     setSpawnError(null);
     setSpawning(true);
     try {
-      const res = await fetch(`${EDITOR_URL}/spawn`, {
+      const res = await fetch(`/api/editor/spawn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
