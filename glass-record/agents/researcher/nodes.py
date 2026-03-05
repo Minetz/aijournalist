@@ -21,8 +21,8 @@ log = structlog.get_logger()
 
 
 class ResearchSettings(BaseSettings):
-    gcs_evidence_bucket: str = "glass-record-evidence-dev"
-    google_cloud_project: str = "glass-record-dev"
+    gcs_evidence_bucket: str = "glass-record-evidence-prod"
+    google_cloud_project: str = "glass-record-prod"
     gemini_model: str = "gemini-3.1-pro-preview"
     gemini_fallback_model: str = "gemini-3.0-flash-preview"
     google_genai_use_vertexai: bool = True
