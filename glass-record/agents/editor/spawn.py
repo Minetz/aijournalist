@@ -71,7 +71,8 @@ class SpawnResponse(BaseModel):
     jurisdiction: str
     tier: str
     schedule: str
-    scheduler_job: str
+    scheduler_job: str | None = None
+    warning: str | None = None
 
 
 @router.post("/spawn", response_model=SpawnResponse)
@@ -92,15 +93,21 @@ async def spawn_journalist(req: SpawnRequest) -> SpawnResponse:
         tier=req.tier,
     )
 
-    # Create Cloud Scheduler job
-    job_name = await _create_scheduler_job(
-        journalist_id=journalist_id,
-        mandate=req.mandate,
-        jurisdiction=req.jurisdiction,
-        tier=req.tier,
-        schedule=req.schedule,
-        project_id=settings.google_cloud_project,
-    )
+    # Create Cloud Scheduler job (best-effort — journalist is already registered)
+    job_name: str | None = None
+    warning: str | None = None
+    try:
+        job_name = await _create_scheduler_job(
+            journalist_id=journalist_id,
+            mandate=req.mandate,
+            jurisdiction=req.jurisdiction,
+            tier=req.tier,
+            schedule=req.schedule,
+            project_id=settings.google_cloud_project,
+        )
+    except Exception as exc:
+        warning = f"Journalist registered but scheduler job failed: {exc}"
+        log.error("scheduler_job_failed", error=str(exc), journalist_id=journalist_id)
 
     log.info("spawn_complete", journalist_id=journalist_id, scheduler_job=job_name)
     return SpawnResponse(
@@ -110,6 +117,7 @@ async def spawn_journalist(req: SpawnRequest) -> SpawnResponse:
         tier=req.tier,
         schedule=req.schedule,
         scheduler_job=job_name,
+        warning=warning,
     )
 
 
@@ -164,12 +172,5 @@ async def _create_scheduler_job(
         ),
     )
 
-    try:
-        result = client.create_job(parent=parent, job=job)
-        return result.name
-    except Exception as exc:
-        log.error("scheduler_job_failed", error=str(exc), journalist_id=journalist_id)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Journalist registered but scheduler job failed: {exc}",
-        )
+    result = client.create_job(parent=parent, job=job)
+    return result.name

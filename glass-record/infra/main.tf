@@ -103,6 +103,12 @@ resource "google_project_iam_member" "agent_vertex" {
   member  = "serviceAccount:${google_service_account.agent_runner.email}"
 }
 
+resource "google_project_iam_member" "agent_scheduler" {
+  project = var.project_id
+  role    = "roles/cloudscheduler.admin"
+  member  = "serviceAccount:${google_service_account.agent_runner.email}"
+}
+
 # ── Cloud Storage: evidence locker ───────────────────────────────────────────
 
 resource "google_storage_bucket" "evidence" {
