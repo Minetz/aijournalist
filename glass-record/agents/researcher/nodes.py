@@ -24,6 +24,7 @@ class ResearchSettings(BaseSettings):
     gcs_evidence_bucket: str = "glass-record-evidence-dev"
     google_cloud_project: str = "glass-record-dev"
     gemini_model: str = "gemini-3.1-pro-preview"
+    gemini_fallback_model: str = "gemini-3.0-flash-preview"
     google_genai_use_vertexai: bool = True
 
 
@@ -58,21 +59,33 @@ async def grounded_research(state: ResearcherState) -> dict:
     )
 
     @retry(
-        retry=retry_if_exception_type((ResourceExhausted, ServiceUnavailable)),
+        retry=retry_if_exception_type(ServiceUnavailable),
         wait=wait_exponential(multiplier=1, min=4, max=60),
-        stop=stop_after_attempt(5),
+        stop=stop_after_attempt(4),
         reraise=True,
     )
-    async def _generate_with_retry() -> genai.types.GenerateContentResponse:
+    async def _call_model(model: str) -> genai.types.GenerateContentResponse:
         return await client.aio.models.generate_content(
-            model=settings.gemini_model,
+            model=model,
             contents=search_prompt,
             config=GenerateContentConfig(
                 tools=[Tool(google_search=GoogleSearch())],
             ),
         )
 
-    grounded = await _generate_with_retry()
+    try:
+        grounded = await _call_model(settings.gemini_model)
+    except ResourceExhausted:
+        log.warning(
+            "quota_exhausted_falling_back",
+            primary_model=settings.gemini_model,
+            fallback_model=settings.gemini_fallback_model,
+        )
+        emit(journalist_id, "researcher_quota_fallback", {
+            "primary_model": settings.gemini_model,
+            "fallback_model": settings.gemini_fallback_model,
+        })
+        grounded = await _call_model(settings.gemini_fallback_model)
 
     grounded_text = grounded.text or ""
     sources: list[dict] = []
