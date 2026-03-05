@@ -4,10 +4,12 @@ import json
 
 import structlog
 from google import genai
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
 from google.cloud import firestore, storage
 from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
 from langchain_core.messages import HumanMessage
 from pydantic_settings import BaseSettings
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from agents.researcher.prompts import EVIDENCE_EXTRACTION_PROMPT
 from agents.shared.base_agent import log_action
@@ -55,13 +57,22 @@ async def grounded_research(state: ResearcherState) -> dict:
         f"Summarise what you find, citing specific facts, dates, and sources."
     )
 
-    grounded = await client.aio.models.generate_content(
-        model=settings.gemini_model,
-        contents=search_prompt,
-        config=GenerateContentConfig(
-            tools=[Tool(google_search=GoogleSearch())],
-        ),
+    @retry(
+        retry=retry_if_exception_type((ResourceExhausted, ServiceUnavailable)),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        stop=stop_after_attempt(5),
+        reraise=True,
     )
+    async def _generate_with_retry() -> genai.types.GenerateContentResponse:
+        return await client.aio.models.generate_content(
+            model=settings.gemini_model,
+            contents=search_prompt,
+            config=GenerateContentConfig(
+                tools=[Tool(google_search=GoogleSearch())],
+            ),
+        )
+
+    grounded = await _generate_with_retry()
 
     grounded_text = grounded.text or ""
     sources: list[dict] = []
