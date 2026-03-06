@@ -84,3 +84,26 @@ async def get_graph(journalist_id: str) -> dict:
             links.append({"source": e_node, "target": ent_node, "label": "Mentions"})
 
     return {"nodes": nodes, "links": links}
+
+
+@router.get("/timeline/{journalist_id}")
+async def get_timeline(journalist_id: str) -> dict:
+    """
+    Return all timeline events for a journalist, sorted chronologically.
+    Each event is linked to the evidence item and story that produced it.
+
+    Response shape:
+      { "events": [ { event_id, event_date, description, entities,
+                       evidence_id, source_url, story_id, cycle_id,
+                       created_at } ] }
+    """
+    db = firestore.AsyncClient()
+    snap = await (
+        db.collection("journalists")
+        .document(journalist_id)
+        .collection("timeline_events")
+        .order_by("event_date", direction=firestore.Query.ASCENDING)
+        .get()
+    )
+    events = [doc.to_dict() for doc in snap]
+    return {"events": events}

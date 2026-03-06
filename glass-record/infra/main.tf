@@ -109,6 +109,13 @@ resource "google_project_iam_member" "agent_scheduler" {
   member  = "serviceAccount:${google_service_account.agent_runner.email}"
 }
 
+# Allow Cloud Scheduler to invoke the Editor Cloud Run service
+resource "google_project_iam_member" "scheduler_run_invoker" {
+  project = var.project_id
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${google_service_account.scheduler_invoker.email}"
+}
+
 # ── Cloud Storage: evidence locker ───────────────────────────────────────────
 
 resource "google_storage_bucket" "evidence" {
@@ -145,5 +152,7 @@ locals {
     GEMINI_MODEL              = "gemini-3.1-pro-preview"
     GCS_EVIDENCE_BUCKET       = google_storage_bucket.evidence.name
     PUBSUB_RESEARCHER_TOPIC   = module.pubsub.researcher_topic_name
+    EDITOR_SERVICE_URL        = module.editor_service.url
+    SCHEDULER_SA_EMAIL        = google_service_account.scheduler_invoker.email
   }
 }

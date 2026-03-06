@@ -8,7 +8,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
 from agents.editor.events import emit
-from agents.editor.publish_prompts import STORY_SYNTHESIS_PROMPT
+from agents.editor.publish_prompts import STORY_SYNTHESIS_PROMPT, TIMELINE_EXTRACTION_PROMPT
 from agents.legal_tree.nodes import build_legal_tree
 from agents.shared.base_agent import get_journalist_doc, log_action
 from agents.shared.gemini import get_llm
@@ -46,7 +46,8 @@ async def _fetch_evidence_summary(
     db: firestore.AsyncClient,
     journalist_id: str,
     max_items: int = 15,
-) -> str:
+) -> tuple[str, list[dict]]:
+    """Returns (formatted summary string, raw evidence dicts)."""
     evidence_ref = (
         db.collection("journalists")
         .document(journalist_id)
@@ -56,8 +57,10 @@ async def _fetch_evidence_summary(
     )
     docs = await evidence_ref.get()
     lines: list[str] = []
+    evidence_dicts: list[dict] = []
     for doc in docs:
         e = doc.to_dict()
+        evidence_dicts.append(e)
         claims = "; ".join(e.get("claims", []))
         lines.append(
             f"[{e['evidence_id']}] {e['source_title']} "
@@ -65,7 +68,76 @@ async def _fetch_evidence_summary(
             f"  Source: {e['source_url']}\n"
             f"  Claims: {claims}"
         )
-    return "\n\n".join(lines) if lines else "No evidence collected."
+    summary = "\n\n".join(lines) if lines else "No evidence collected."
+    return summary, evidence_dicts
+
+
+async def _extract_and_store_timeline(
+    db: firestore.AsyncClient,
+    journalist_id: str,
+    story_id: str,
+    cycle_id: str,
+    evidence_docs: list[dict],
+) -> None:
+    """
+    Extract dateable events from evidence claims via LLM and write them to
+    /journalists/{id}/timeline_events/{event_id} for the timeline API.
+    """
+    if not evidence_docs:
+        return
+
+    # Build compact input: evidence_id → claims
+    claims_lines: list[str] = []
+    url_map: dict[str, str] = {}
+    for e in evidence_docs:
+        eid = e.get("evidence_id", "")
+        url = e.get("source_url", "")
+        claims = e.get("claims", [])
+        url_map[eid] = url
+        if claims:
+            claims_lines.append(f'{eid} ({url}): {" | ".join(claims[:4])}')
+
+    if not claims_lines:
+        return
+
+    try:
+        llm = get_llm(temperature=0.0)
+        prompt = TIMELINE_EXTRACTION_PROMPT.format(
+            evidence_claims="\n".join(claims_lines[:40])
+        )
+        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        raw = response.content
+        if isinstance(raw, list):
+            raw = "".join(p["text"] if isinstance(p, dict) else str(p) for p in raw)
+        data = json.loads(raw)
+    except Exception:
+        log.warning("timeline_extraction_failed", journalist_id=journalist_id)
+        return
+
+    batch = db.batch()
+    for event in data.get("events", []):
+        event_id = str(uuid.uuid4())
+        doc_ref = (
+            db.collection("journalists")
+            .document(journalist_id)
+            .collection("timeline_events")
+            .document(event_id)
+        )
+        batch.set(doc_ref, {
+            "event_id": event_id,
+            "journalist_id": journalist_id,
+            "story_id": story_id,
+            "cycle_id": cycle_id,
+            "event_date": event.get("event_date", ""),
+            "description": event.get("description", "")[:250],
+            "entities": event.get("entities", []),
+            "evidence_id": event.get("evidence_id", ""),
+            "source_url": event.get("source_url", ""),
+            "created_at": datetime.datetime.utcnow().isoformat(),
+        })
+    await batch.commit()
+    log.info("timeline_events_stored",
+             journalist_id=journalist_id, count=len(data.get("events", [])))
 
 
 async def synthesise_and_publish(state: EditorState) -> dict:
@@ -110,7 +182,7 @@ async def synthesise_and_publish(state: EditorState) -> dict:
             )
     legal_summary = "\n".join(legal_summary_lines)
 
-    evidence_summary = await _fetch_evidence_summary(db, journalist_id)
+    evidence_summary, evidence_docs = await _fetch_evidence_summary(db, journalist_id)
 
     # Synthesise article
     llm = get_llm(temperature=0.3).with_structured_output(ArticleDraft)
@@ -152,6 +224,9 @@ async def synthesise_and_publish(state: EditorState) -> dict:
 
     story_path = f"/{journalist_id}/stories/{story_id}"
 
+    # Extract and persist timeline events from this cycle's evidence
+    await _extract_and_store_timeline(db, journalist_id, story_id, cycle_id, evidence_docs)
+
     await log_action(db, journalist_id, cycle_id, "story_published", {
         "story_id": story_id,
         "story_path": story_path,
@@ -186,6 +261,7 @@ def _build_footer(journalist_id: str, cycle_id: str, tree_id: str) -> str:
     <li><a href="/{journalist_id}?tab=evidence">Evidence locker</a></li>
     <li><a href="/{journalist_id}?tab=compliance">Compliance log</a></li>
     <li><a href="/{journalist_id}?tab=graph">Knowledge graph</a></li>
+    <li><a href="/{journalist_id}?tab=timeline">Timeline of events</a></li>
   </ul>
   <p><small>Cycle ID: {cycle_id}</small></p>
 </section>

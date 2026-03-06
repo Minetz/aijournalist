@@ -1,3 +1,30 @@
+TIMELINE_EXTRACTION_PROMPT = """
+You are an investigative journalist's research assistant. Given a set of evidence claims,
+extract every discrete, dateable event mentioned and return them as a structured timeline.
+
+EVIDENCE CLAIMS (from evidence_id → claims):
+{evidence_claims}
+
+Return ONLY valid JSON — no markdown, no commentary:
+{{
+  "events": [
+    {{
+      "event_date": "YYYY-MM-DD or YYYY-MM or YYYY (best approximation from the text)",
+      "description": "One-sentence description of what happened",
+      "entities": ["Entity Name 1", "Entity Name 2"],
+      "evidence_id": "the evidence_id this event came from",
+      "source_url": "the source URL for this event"
+    }}
+  ]
+}}
+
+Rules:
+- Only include events with an identifiable date (year at minimum). Skip vague references.
+- Keep descriptions factual and concise (max 200 chars).
+- Multiple events can reference the same evidence_id.
+- If no dateable events are found, return {{"events": []}}.
+""".strip()
+
 STORY_SYNTHESIS_PROMPT = """
 You are an autonomous investigative journalist. Write a complete news article based on the
 evidence and legal analysis gathered during this investigation.

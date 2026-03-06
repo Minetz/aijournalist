@@ -8,6 +8,7 @@ POST /spawn creates a new journalist:
 
 Run as part of the Editor Cloud Run service.
 """
+import os
 import re
 import uuid
 
@@ -132,17 +133,20 @@ async def _create_scheduler_job(
 ) -> str:
     """
     Create a Cloud Scheduler job that POSTs to the Editor /run endpoint daily.
-    The Editor service URL is derived from the Cloud Run naming convention.
+    The Editor service URL is read from the EDITOR_SERVICE_URL env var injected
+    by Terraform — Cloud Run v2 URLs are auto-generated and cannot be predicted.
     """
     import json, base64
 
     client = scheduler_v1.CloudSchedulerClient()
     parent = f"projects/{project_id}/locations/{region}"
 
-    editor_url = (
-        f"https://glass-record-editor-{project_id.replace('-', '')}"
-        f".{region}.run.app/run"
-    )
+    base_url = os.environ.get("EDITOR_SERVICE_URL", "").rstrip("/")
+    if not base_url:
+        raise RuntimeError(
+            "EDITOR_SERVICE_URL env var is not set — cannot construct scheduler job URL"
+        )
+    editor_url = f"{base_url}/run"
 
     body = json.dumps({
         "journalist_id": journalist_id,
@@ -161,8 +165,11 @@ async def _create_scheduler_job(
             body=body,
             headers={"Content-Type": "application/json"},
             oidc_token=scheduler_v1.OidcToken(
-                service_account_email=f"glass-record-scheduler@{project_id}.iam.gserviceaccount.com",
-                audience=editor_url,
+                service_account_email=os.environ.get(
+                    "SCHEDULER_SA_EMAIL",
+                    f"glass-record-scheduler@{project_id}.iam.gserviceaccount.com",
+                ),
+                audience=base_url,  # audience must match the service URL, not /run
             ),
         ),
         retry_config=scheduler_v1.RetryConfig(

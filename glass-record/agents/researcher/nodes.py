@@ -28,6 +28,39 @@ class ResearchSettings(BaseSettings):
     google_genai_use_vertexai: bool = True
 
 
+async def _load_prior_evidence(journalist_id: str, limit: int = 30) -> str:
+    """
+    Fetch the most recent evidence items from the evidence_locker and return
+    a compact summary string to inject into the researcher prompt.
+    Returns an empty string if there is no prior evidence.
+    """
+    try:
+        db = firestore.AsyncClient()
+        snap = await (
+            db.collection("journalists")
+            .document(journalist_id)
+            .collection("evidence_locker")
+            .order_by("collected_at", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+            .get()
+        )
+        if not snap:
+            return ""
+
+        lines = ["Prior evidence already collected (do not duplicate):\n"]
+        for doc in snap:
+            e = doc.to_dict()
+            date = e.get("collected_at", "")[:10]
+            title = e.get("source_title", e.get("source_url", ""))
+            claims = e.get("claims", [])
+            claim_str = " | ".join(claims[:2])
+            lines.append(f"- [{date}] {title}: {claim_str}")
+        return "\n".join(lines) + "\n\n"
+    except Exception:
+        log.warning("prior_evidence_load_failed", journalist_id=journalist_id)
+        return ""
+
+
 async def grounded_research(state: ResearcherState) -> dict:
     """
     Single node: uses Gemini with Google Search grounding to research a
@@ -44,6 +77,9 @@ async def grounded_research(state: ResearcherState) -> dict:
 
     emit(journalist_id, "researcher_searching", {"sub_question": sub_question[:80]})
 
+    # ── Step 0: Load prior evidence for context ───────────────────────────────
+    prior_context = await _load_prior_evidence(journalist_id)
+
     # ── Step 1: Gemini with Google Search grounding ──────────────────────────
     client = genai.Client(
         vertexai=settings.google_genai_use_vertexai,
@@ -54,7 +90,9 @@ async def grounded_research(state: ResearcherState) -> dict:
     search_prompt = (
         f"You are an investigative journalist researcher.\n"
         f"Mandate: {mandate}\n"
+        f"{prior_context}"
         f"Research this sub-question using the web: {sub_question}\n"
+        f"Prioritise new developments not already covered in prior findings above.\n"
         f"Summarise what you find, citing specific facts, dates, and sources."
     )
 

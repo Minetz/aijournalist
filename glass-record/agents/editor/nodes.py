@@ -195,8 +195,9 @@ def spawn_researchers(state: EditorState) -> list[Send]:
 
 def _publish_researcher_tasks(state: EditorState) -> None:
     topic = os.environ.get("PUBSUB_RESEARCHER_TOPIC", "glass-record-researcher-tasks")
+    project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "glass-record-prod")
     publisher = pubsub_v1.PublisherClient()
-    topic_path = publisher.topic_path(state["config"].journalist_id.split("-")[0], topic)
+    topic_path = publisher.topic_path(project_id, topic)
 
     for q in state["sub_questions"]:
         payload = json.dumps(
