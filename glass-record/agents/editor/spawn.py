@@ -122,6 +122,21 @@ async def spawn_journalist(req: SpawnRequest) -> SpawnResponse:
     )
 
 
+async def _get_editor_service_url(project_id: str, region: str) -> str:
+    """
+    Look up the Editor Cloud Run service URL via the Cloud Run API.
+    Falls back to EDITOR_SERVICE_URL env var if set (useful for local dev).
+    """
+    if url := os.environ.get("EDITOR_SERVICE_URL", "").rstrip("/"):
+        return url
+
+    from google.cloud import run_v2
+    run_client = run_v2.ServicesAsyncClient()
+    name = f"projects/{project_id}/locations/{region}/services/glass-record-editor"
+    service = await run_client.get_service(name=name)
+    return service.uri.rstrip("/")
+
+
 async def _create_scheduler_job(
     journalist_id: str,
     mandate: str,
@@ -133,19 +148,15 @@ async def _create_scheduler_job(
 ) -> str:
     """
     Create a Cloud Scheduler job that POSTs to the Editor /run endpoint daily.
-    The Editor service URL is read from the EDITOR_SERVICE_URL env var injected
-    by Terraform — Cloud Run v2 URLs are auto-generated and cannot be predicted.
+    The Editor service URL is resolved at runtime via the Cloud Run API so there
+    is no circular dependency in Terraform.
     """
     import json, base64
 
     client = scheduler_v1.CloudSchedulerClient()
     parent = f"projects/{project_id}/locations/{region}"
 
-    base_url = os.environ.get("EDITOR_SERVICE_URL", "").rstrip("/")
-    if not base_url:
-        raise RuntimeError(
-            "EDITOR_SERVICE_URL env var is not set — cannot construct scheduler job URL"
-        )
+    base_url = await _get_editor_service_url(project_id, region)
     editor_url = f"{base_url}/run"
 
     body = json.dumps({

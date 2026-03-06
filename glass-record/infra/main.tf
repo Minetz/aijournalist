@@ -152,7 +152,6 @@ locals {
     GEMINI_MODEL              = "gemini-3.1-pro-preview"
     GCS_EVIDENCE_BUCKET       = google_storage_bucket.evidence.name
     PUBSUB_RESEARCHER_TOPIC   = module.pubsub.researcher_topic_name
-    EDITOR_SERVICE_URL        = module.editor_service.url
     SCHEDULER_SA_EMAIL        = google_service_account.scheduler_invoker.email
   }
 }
