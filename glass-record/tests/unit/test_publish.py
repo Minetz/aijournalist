@@ -57,7 +57,8 @@ async def test_publish_stores_to_firestore(mock_firestore_client):
         patch("agents.editor.publish_nodes.build_legal_tree",
               AsyncMock(return_value=mock_tree)),
         patch("agents.editor.publish_nodes._fetch_evidence_summary",
-              AsyncMock(return_value="Evidence item 1: credibility 0.9")),
+              AsyncMock(return_value=("Evidence item 1: credibility 0.9", []))),
+        patch("agents.editor.publish_nodes._extract_and_store_timeline", AsyncMock()),
         patch("agents.editor.publish_nodes.get_llm") as mock_get_llm,
     ):
         mock_llm = MagicMock()
