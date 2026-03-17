@@ -12,7 +12,7 @@ from agents.editor.graph import build_graph
 from agents.editor.graph_api import router as graph_router
 from agents.editor.spawn import router as spawn_router
 from agents.shared.base_agent import get_journalist_doc, register_journalist
-from agents.shared.cost import CostCallbackHandler
+from agents.shared.cost import BudgetExceededError, CostCallbackHandler, check_monthly_budget
 from agents.shared.gemini import get_settings
 from agents.shared.state import EditorState, JournalistConfig
 from agents.verification.main import router as tips_router
@@ -88,6 +88,14 @@ async def run_cycle(config: JournalistConfig, resume: bool = False) -> dict:
                  has_sub_questions=bool(resume_state.get("sub_questions")))
 
     settings = get_settings()
+    limit_usd = config.monthly_budget_usd if config.monthly_budget_usd is not None else settings.monthly_budget_usd
+    try:
+        await check_monthly_budget(db, config.journalist_id, limit_usd)
+    except BudgetExceededError as exc:
+        log.warning("budget_exceeded", journalist_id=config.journalist_id,
+                    spent_usd=exc.spent_usd, limit_usd=exc.limit_usd)
+        raise HTTPException(status_code=402, detail=str(exc))
+
     cost_cb = CostCallbackHandler(
         journalist_id=config.journalist_id,
         cycle_id=cycle_id,

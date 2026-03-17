@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.1-pro-preview"
     google_cloud_project: str = "glass-record-dev"
     google_genai_use_vertexai: bool = True
+    monthly_budget_usd: float = 50.0  # global default; override per-journalist via JournalistConfig
 
 
 @lru_cache

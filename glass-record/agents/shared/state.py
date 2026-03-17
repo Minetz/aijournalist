@@ -10,6 +10,7 @@ class JournalistConfig(BaseModel):
     mandate: str       # immutable — set at spawn, never overwritten
     jurisdiction: str  # e.g. "UN", "EU", "US_FEDERAL"
     tier: str = "free"  # "free" | "paid"
+    monthly_budget_usd: float | None = None  # overrides global default when set
 
 
 def _keep_last(a, b):

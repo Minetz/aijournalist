@@ -33,6 +33,56 @@ def _price_for(model: str) -> dict[str, float]:
     return _DEFAULT_PRICING
 
 
+class BudgetExceededError(Exception):
+    """Raised when a journalist's monthly spend has reached the configured limit."""
+
+    def __init__(self, journalist_id: str, spent_usd: float, limit_usd: float) -> None:
+        self.journalist_id = journalist_id
+        self.spent_usd = spent_usd
+        self.limit_usd = limit_usd
+        super().__init__(
+            f"Monthly budget exceeded for {journalist_id}: "
+            f"${spent_usd:.4f} spent of ${limit_usd:.2f} limit"
+        )
+
+
+async def check_monthly_budget(
+    db: firestore.AsyncClient,
+    journalist_id: str,
+    limit_usd: float,
+) -> float:
+    """
+    Sum cost_ledger entries for the current calendar month and raise
+    BudgetExceededError if total >= limit_usd.
+
+    Returns the current month's total spend so callers can log it.
+    """
+    now = datetime.datetime.utcnow()
+    month_start = datetime.datetime(now.year, now.month, 1).isoformat()
+
+    docs = await (
+        db.collection("journalists")
+        .document(journalist_id)
+        .collection("cost_ledger")
+        .where("recorded_at", ">=", month_start)
+        .get()
+    )
+
+    spent_usd = sum(d.to_dict().get("cost_usd", 0.0) for d in docs)
+    log.info(
+        "budget_check",
+        journalist_id=journalist_id,
+        spent_usd=round(spent_usd, 4),
+        limit_usd=limit_usd,
+        month=now.strftime("%Y-%m"),
+    )
+
+    if spent_usd >= limit_usd:
+        raise BudgetExceededError(journalist_id, spent_usd, limit_usd)
+
+    return spent_usd
+
+
 class CostCallbackHandler(AsyncCallbackHandler):
     """
     Accumulate token usage across all LLM calls in a single cycle.
