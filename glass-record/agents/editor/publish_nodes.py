@@ -184,6 +184,21 @@ async def synthesise_and_publish(state: EditorState) -> dict:
 
     evidence_summary, evidence_docs = await _fetch_evidence_summary(db, journalist_id)
 
+    # Build contradictions section for the synthesis prompt
+    contradictions = state.get("contradictions") or []
+    if contradictions:
+        c_lines = ["CONTRADICTIONS DETECTED (must be addressed in article):"]
+        for c in contradictions:
+            severity = c.get("severity", "unknown").upper()
+            c_lines.append(
+                f"- [{severity}] {c.get('description', '')}: "
+                f'"{c.get("claim_a", "")}" vs "{c.get("claim_b", "")}" — '
+                f"Suggested resolution: {c.get('resolution_suggestion', '')}"
+            )
+        contradictions_section = "\n".join(c_lines)
+    else:
+        contradictions_section = ""
+
     # Synthesise article
     llm = get_llm(temperature=0.3).with_structured_output(ArticleDraft)
     prompt = STORY_SYNTHESIS_PROMPT.format(
@@ -193,6 +208,7 @@ async def synthesise_and_publish(state: EditorState) -> dict:
         evidence_summary=evidence_summary,
         legal_strength=tree.overall_strength,
         legal_summary=legal_summary,
+        contradictions_section=contradictions_section,
     )
     draft: ArticleDraft = await llm.ainvoke([HumanMessage(content=prompt)])
 

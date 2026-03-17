@@ -24,6 +24,10 @@ class EditorState(TypedDict):
     compliance_passed: bool
     cycle_id: str
     messages: Annotated[list, add_messages]
+    # Cumulative case building: injected at cycle start from Firestore case_state/current
+    case_context: Annotated[str, _keep_last]
+    # Contradiction detection: populated after researcher fan-in, surfaced in article
+    contradictions: Annotated[list[dict], _keep_last]
 
 
 class ResearcherState(TypedDict):

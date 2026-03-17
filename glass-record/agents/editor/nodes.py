@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from agents.editor.events import emit
 from agents.shared.base_agent import get_journalist_doc, log_action
+from agents.shared.case_state import load_case_context
 from agents.shared.gemini import get_llm
 from agents.shared.state import EditorState, ResearcherState
 from agents.editor.prompts import DECOMPOSE_MANDATE_PROMPT, STORY_SELECTION_PROMPT
@@ -44,6 +45,7 @@ class StorySelection(BaseModel):
     story_summary: str
     urgency_score: int
     mandate_alignment_reason: str
+    advances_open_question: str = "none"
 
 
 async def select_story(state: EditorState) -> dict:
@@ -83,6 +85,9 @@ async def select_story(state: EditorState) -> dict:
     previous_stories_snap = await stories_ref.get()
     previous_stories = [s.to_dict().get("title", "") for s in previous_stories_snap]
 
+    # Load accumulated case context so story selection builds on prior cycles
+    case_context = await load_case_context(db, journalist_id)
+
     emit(journalist_id, "llm_call", {"step": "select_story", "model": "gemini"})
 
     llm = get_llm(temperature=0.3).with_structured_output(StorySelection)
@@ -91,6 +96,7 @@ async def select_story(state: EditorState) -> dict:
         jurisdiction=jurisdiction,
         today=datetime.date.today().isoformat(),
         previous_stories=previous_stories or "none",
+        case_context=case_context,
     )
     story: StorySelection = await llm.ainvoke([HumanMessage(content=prompt)])
 
@@ -106,6 +112,7 @@ async def select_story(state: EditorState) -> dict:
     log.info("story_selected", title=story.story_title, urgency=story.urgency_score)
     return {
         "selected_story": story.story_title,
+        "case_context": case_context,
         "messages": [HumanMessage(content=f"Selected story: {story.story_title}")],
     }
 
@@ -138,6 +145,7 @@ async def decompose_mandate(state: EditorState) -> dict:
         story_summary="",
         mandate=journalist_doc["mandate"],
         jurisdiction=journalist_doc["jurisdiction"],
+        case_context=state.get("case_context", ""),
     )
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     content = response.content
