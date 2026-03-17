@@ -29,6 +29,8 @@ class EditorState(TypedDict):
     case_context: Annotated[str, _keep_last]
     # Contradiction detection: populated after researcher fan-in, surfaced in article
     contradictions: Annotated[list[dict], _keep_last]
+    # Evidence quality follow-up: low-credibility sub-questions reformulated for re-research
+    followup_sub_questions: Annotated[list[str], _keep_last]
 
 
 class ResearcherState(TypedDict):

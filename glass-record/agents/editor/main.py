@@ -113,6 +113,7 @@ async def run_cycle(config: JournalistConfig, resume: bool = False) -> dict:
         messages=[],
         case_context="",
         contradictions=[],
+        followup_sub_questions=[],
     )
 
     try:
