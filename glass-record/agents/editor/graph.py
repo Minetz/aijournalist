@@ -8,6 +8,8 @@ from agents.editor.nodes import (
     synthesise_results,
 )
 from agents.editor.publish_nodes import synthesise_and_publish
+from agents.editor.contradiction_nodes import detect_contradictions
+from agents.editor.case_nodes import update_case_state
 
 
 def _compliance_gate(state: EditorState) -> str:
@@ -25,18 +27,22 @@ def build_graph() -> StateGraph:
     g.add_node("select_story", select_story)
     g.add_node("decompose_mandate", decompose_mandate)
     g.add_node("researcher_worker", researcher_graph)
-    g.add_node("synthesise_results", synthesise_results)   # runs compliance
-    g.add_node("publish", synthesise_and_publish)          # legal tree + Ghost
+    g.add_node("detect_contradictions", detect_contradictions)  # cross-checks evidence
+    g.add_node("synthesise_results", synthesise_results)        # runs compliance
+    g.add_node("publish", synthesise_and_publish)               # legal tree + article
+    g.add_node("update_case_state", update_case_state)          # cumulative case building
 
     g.add_edge(START, "select_story")
     g.add_edge("select_story", "decompose_mandate")
     g.add_conditional_edges("decompose_mandate", spawn_researchers, ["researcher_worker"])
-    g.add_edge("researcher_worker", "synthesise_results")
+    g.add_edge("researcher_worker", "detect_contradictions")
+    g.add_edge("detect_contradictions", "synthesise_results")
     g.add_conditional_edges(
         "synthesise_results",
         _compliance_gate,
         {"publish": "publish", "end": END},
     )
-    g.add_edge("publish", END)
+    g.add_edge("publish", "update_case_state")
+    g.add_edge("update_case_state", END)
 
     return g.compile()

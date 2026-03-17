@@ -1,20 +1,22 @@
+import os
 import uuid
 
 import structlog
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from agents.editor.events import emit, subscribe
 from agents.editor.graph import build_graph
 from agents.editor.graph_api import router as graph_router
 from agents.editor.spawn import router as spawn_router
-from agents.shared.base_agent import register_journalist
+from agents.shared.base_agent import get_journalist_doc, register_journalist
 from agents.shared.cost import CostCallbackHandler
 from agents.shared.gemini import get_settings
 from agents.shared.state import EditorState, JournalistConfig
 from agents.verification.main import router as tips_router
-from google.cloud import firestore
+from google.cloud import firestore, scheduler_v1
 
 app = FastAPI(title="glass-record-editor", version="0.1.0")
 app.add_middleware(
@@ -101,6 +103,8 @@ async def run_cycle(config: JournalistConfig, resume: bool = False) -> dict:
         compliance_passed=False,
         cycle_id=cycle_id,
         messages=[],
+        case_context="",
+        contradictions=[],
     )
 
     try:
@@ -165,3 +169,91 @@ async def stream_events(journalist_id: str) -> StreamingResponse:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+class RescheduleRequest(BaseModel):
+    journalist_id: str
+    schedule: str  # cron expression, e.g. "*/30 * * * *" for every 30 min
+
+
+@app.post("/reschedule")
+async def reschedule_journalist(req: RescheduleRequest) -> dict:
+    """
+    Update the Cloud Scheduler job for a journalist to a new cron schedule.
+
+    Use this to switch from the default daily run to a continuous loop, e.g.:
+      - Every 30 minutes:  "*/30 * * * *"
+      - Every hour:        "0 * * * *"
+      - Back to daily:     "0 6 * * *"
+
+    The journalist must already exist in Firestore (spawned previously).
+    """
+    import re
+
+    _CRON_RE = re.compile(
+        r"^(\*|[0-9,\-\*/]+)\s+"
+        r"(\*|[0-9,\-\*/]+)\s+"
+        r"(\*|[0-9,\-\*/]+)\s+"
+        r"(\*|[0-9,\-\*/]+)\s+"
+        r"(\*|[0-9,\-\*/]+)$"
+    )
+    if not _CRON_RE.match(req.schedule.strip()):
+        raise HTTPException(status_code=422, detail=f"Invalid cron expression: '{req.schedule}'")
+
+    db = firestore.AsyncClient()
+    journalist_doc = await get_journalist_doc(db, req.journalist_id)
+
+    settings = get_settings()
+    project_id = settings.google_cloud_project
+    region = os.environ.get("GOOGLE_CLOUD_REGION", "us-central1")
+
+    # Resolve the editor service URL
+    from agents.editor.spawn import _get_editor_service_url
+    base_url = await _get_editor_service_url(project_id, region)
+    editor_url = f"{base_url}/run"
+
+    import json
+    body = json.dumps({
+        "journalist_id": req.journalist_id,
+        "mandate": journalist_doc["mandate"],
+        "jurisdiction": journalist_doc["jurisdiction"],
+        "tier": journalist_doc.get("tier", "free"),
+    }).encode()
+
+    client = scheduler_v1.CloudSchedulerClient()
+    parent = f"projects/{project_id}/locations/{region}"
+    job_name = f"{parent}/jobs/glass-record-cycle-{req.journalist_id}"
+
+    job = scheduler_v1.Job(
+        name=job_name,
+        schedule=req.schedule.strip(),
+        time_zone="UTC",
+        http_target=scheduler_v1.HttpTarget(
+            uri=editor_url,
+            http_method=scheduler_v1.HttpMethod.POST,
+            body=body,
+            headers={"Content-Type": "application/json"},
+            oidc_token=scheduler_v1.OidcToken(
+                service_account_email=os.environ.get(
+                    "SCHEDULER_SA_EMAIL",
+                    f"glass-record-scheduler@{project_id}.iam.gserviceaccount.com",
+                ),
+                audience=base_url,
+            ),
+        ),
+    )
+
+    try:
+        # update_mask tells the API which fields to replace
+        update_mask = {"paths": ["schedule", "http_target"]}
+        client.update_job(job=job, update_mask=update_mask)
+        log.info("scheduler_rescheduled",
+                 journalist_id=req.journalist_id, schedule=req.schedule)
+        return {
+            "status": "ok",
+            "journalist_id": req.journalist_id,
+            "new_schedule": req.schedule,
+        }
+    except Exception as exc:
+        log.error("reschedule_failed", error=str(exc), journalist_id=req.journalist_id)
+        raise HTTPException(status_code=500, detail=str(exc))

@@ -40,11 +40,15 @@ LEGAL CASE TREE SUMMARY:
 Overall strength: {legal_strength}
 {legal_summary}
 
+{contradictions_section}
+
 WRITING RULES:
 - Write in clear, factual journalistic prose. No opinion, no speculation.
 - Every claim must be traceable to the evidence provided.
 - Lead paragraph: who, what, when, where, why — most important fact first.
 - Include relevant statute or treaty references where the legal tree supports them.
+- If contradictions are listed above, include a "Disputed Claims" section in the article
+  that names each contradiction and the resolution suggestion.
 - End with a section titled "What We Don't Know Yet" listing gaps in the evidence.
 - Do not name individuals as perpetrators without direct evidentiary support.
 - Approximate length: 600–1000 words.
