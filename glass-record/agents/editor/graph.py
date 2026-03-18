@@ -12,6 +12,7 @@ from agents.editor.contradiction_nodes import detect_contradictions
 from agents.editor.case_nodes import update_case_state
 from agents.editor.quality_nodes import assess_evidence_quality, spawn_followup_researchers
 from agents.editor.records_request_node import draft_records_requests_node
+from agents.editor.revision_nodes import check_and_revise_prior_stories
 
 
 def _compliance_gate(state: EditorState) -> str:
@@ -34,6 +35,7 @@ def build_graph() -> StateGraph:
     g.add_node("followup_researcher_worker", researcher_graph)      # re-research low-credibility
     g.add_node("synthesise_results", synthesise_results)            # runs compliance
     g.add_node("publish", synthesise_and_publish)                   # legal tree + article
+    g.add_node("check_revisions", check_and_revise_prior_stories)   # corrections / updates
     g.add_node("update_case_state", update_case_state)              # cumulative case building
     g.add_node("draft_records_requests", draft_records_requests_node)  # FOIA/records requests
 
@@ -53,7 +55,8 @@ def build_graph() -> StateGraph:
         _compliance_gate,
         {"publish": "publish", "end": END},
     )
-    g.add_edge("publish", "update_case_state")
+    g.add_edge("publish", "check_revisions")
+    g.add_edge("check_revisions", "update_case_state")
     g.add_edge("update_case_state", "draft_records_requests")
     g.add_edge("draft_records_requests", END)
 
