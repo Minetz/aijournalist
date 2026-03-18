@@ -16,6 +16,7 @@ from agents.shared.cost import BudgetExceededError, CostCallbackHandler, check_m
 from agents.shared.gemini import get_settings
 from agents.shared.state import EditorState, JournalistConfig
 from agents.verification.main import router as tips_router
+from tools.records_requests.router import router as records_router
 from google.cloud import firestore, scheduler_v1
 
 app = FastAPI(title="glass-record-editor", version="0.1.0")
@@ -28,6 +29,7 @@ app.add_middleware(
 app.include_router(spawn_router)
 app.include_router(tips_router)
 app.include_router(graph_router)
+app.include_router(records_router)
 log = structlog.get_logger()
 
 
