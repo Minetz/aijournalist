@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from agents.editor.events import emit
 from agents.shared.base_agent import get_journalist_doc, log_action
 from agents.shared.case_state import load_case_context
-from agents.shared.gemini import get_llm
+from agents.shared.gemini import get_llm, get_llm_with_fallback
 from agents.shared.state import EditorState, ResearcherState
 from agents.editor.prompts import DECOMPOSE_MANDATE_PROMPT, STORY_SELECTION_PROMPT
 
@@ -139,7 +139,7 @@ async def decompose_mandate(state: EditorState) -> dict:
 
     journalist_doc = await get_journalist_doc(db, journalist_id)
 
-    llm = get_llm(temperature=0.1)
+    llm = get_llm_with_fallback(temperature=0.1)
     prompt = DECOMPOSE_MANDATE_PROMPT.format(
         story_title=state["selected_story"],
         story_summary="",

@@ -13,7 +13,7 @@ import json
 import structlog
 from langchain_core.messages import HumanMessage
 
-from agents.shared.gemini import get_llm
+from agents.shared.gemini import get_llm_with_fallback
 from tools.records_requests.registry import get_registry_entry, get_template
 
 log = structlog.get_logger()
@@ -125,7 +125,7 @@ async def draft_records_requests(
     entry = get_registry_entry(jurisdiction)
     template_text = get_template(jurisdiction) or ""
 
-    llm = get_llm(temperature=0.1)
+    llm = get_llm_with_fallback(temperature=0.1)
 
     # Step 1: Identify what to request
     identify_prompt = _IDENTIFY_PROMPT.format(

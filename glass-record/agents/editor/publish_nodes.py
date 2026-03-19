@@ -11,7 +11,7 @@ from agents.editor.events import emit
 from agents.editor.publish_prompts import STORY_SYNTHESIS_PROMPT, TIMELINE_EXTRACTION_PROMPT
 from agents.legal_tree.nodes import build_legal_tree
 from agents.shared.base_agent import get_journalist_doc, log_action
-from agents.shared.gemini import get_llm
+from agents.shared.gemini import get_llm, get_llm_with_fallback
 from agents.shared.state import EditorState
 
 log = structlog.get_logger()
@@ -101,7 +101,7 @@ async def _extract_and_store_timeline(
         return
 
     try:
-        llm = get_llm(temperature=0.0)
+        llm = get_llm_with_fallback(temperature=0.0)
         prompt = TIMELINE_EXTRACTION_PROMPT.format(
             evidence_claims="\n".join(claims_lines[:40])
         )

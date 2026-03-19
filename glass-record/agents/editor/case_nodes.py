@@ -14,7 +14,7 @@ from google.cloud import firestore
 from agents.editor.events import emit
 from agents.shared.base_agent import get_journalist_doc, log_action
 from agents.shared.case_state import persist_case_state_update
-from agents.shared.gemini import get_llm
+from agents.shared.gemini import get_llm_with_fallback
 from agents.shared.state import EditorState
 
 log = structlog.get_logger()
@@ -57,7 +57,7 @@ async def update_case_state(state: EditorState) -> dict:
 
     emit(journalist_id, "updating_case_state", {"cycle_id": cycle_id})
 
-    llm = get_llm(temperature=0.1)
+    llm = get_llm_with_fallback(temperature=0.1)
     await persist_case_state_update(
         db=db,
         journalist_id=journalist_id,

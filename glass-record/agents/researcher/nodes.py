@@ -113,9 +113,9 @@ async def grounded_research(state: ResearcherState) -> dict:
 
     try:
         grounded = await _call_model(settings.gemini_model)
-    except ResourceExhausted:
+    except (ResourceExhausted, ServiceUnavailable):
         log.warning(
-            "quota_exhausted_falling_back",
+            "primary_model_unavailable_falling_back",
             primary_model=settings.gemini_model,
             fallback_model=settings.gemini_fallback_model,
         )

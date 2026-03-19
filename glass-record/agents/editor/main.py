@@ -15,6 +15,7 @@ from agents.shared.base_agent import get_journalist_doc, register_journalist
 from agents.shared.cost import BudgetExceededError, CostCallbackHandler, check_monthly_budget
 from agents.shared.gemini import get_settings
 from agents.shared.state import EditorState, JournalistConfig
+from agents.editor.maintenance_router import router as maintenance_router
 from agents.verification.main import router as tips_router
 from tools.records_requests.router import router as records_router
 from google.cloud import firestore, scheduler_v1
@@ -30,6 +31,7 @@ app.include_router(spawn_router)
 app.include_router(tips_router)
 app.include_router(graph_router)
 app.include_router(records_router)
+app.include_router(maintenance_router)
 log = structlog.get_logger()
 
 

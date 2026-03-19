@@ -25,7 +25,7 @@ from langchain_core.messages import HumanMessage
 
 from agents.editor.events import emit
 from agents.shared.base_agent import log_action
-from agents.shared.gemini import get_llm
+from agents.shared.gemini import get_llm_with_fallback
 from agents.shared.state import EditorState
 
 log = structlog.get_logger()
@@ -145,7 +145,7 @@ async def check_and_revise_prior_stories(state: EditorState) -> dict:
         for s in prior_stories
     )
 
-    llm = get_llm(temperature=0.2)
+    llm = get_llm_with_fallback(temperature=0.2)
     prompt = _REVISION_CHECK_PROMPT.format(
         evidence_summary=evidence_summary,
         contradictions_summary=contradictions_summary,

@@ -18,7 +18,7 @@ from langchain_core.messages import HumanMessage
 
 from agents.editor.events import emit
 from agents.shared.base_agent import log_action
-from agents.shared.gemini import get_llm
+from agents.shared.gemini import get_llm_with_fallback
 from agents.shared.state import EditorState
 
 log = structlog.get_logger()
@@ -101,7 +101,7 @@ async def detect_contradictions(state: EditorState) -> dict:
         "cycle_id": cycle_id,
     })
 
-    llm = get_llm(temperature=0.0)
+    llm = get_llm_with_fallback(temperature=0.0)
     prompt = CONTRADICTION_DETECTION_PROMPT.format(
         story_title=state.get("selected_story", ""),
         evidence_claims="\n".join(claims_lines[:50]),

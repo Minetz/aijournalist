@@ -19,7 +19,7 @@ from langgraph.types import Send
 
 from agents.editor.events import emit
 from agents.shared.base_agent import log_action
-from agents.shared.gemini import get_llm
+from agents.shared.gemini import get_llm_with_fallback
 from agents.shared.state import EditorState, ResearcherState
 
 log = structlog.get_logger()
@@ -95,7 +95,7 @@ async def assess_evidence_quality(state: EditorState) -> dict:
     })
 
     # LLM reformulates low-quality questions into primary-source-targeted follow-ups
-    llm = get_llm(temperature=0.1)
+    llm = get_llm_with_fallback(temperature=0.1)
     prompt = _FOLLOWUP_PROMPT.format(
         threshold=CREDIBILITY_THRESHOLD,
         low_quality_questions="\n".join(f"- {q}" for q in low_quality),
