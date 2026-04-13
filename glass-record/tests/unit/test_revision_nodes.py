@@ -139,7 +139,7 @@ async def test_no_revisions_when_llm_returns_empty():
     mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content='{"revisions": []}'))
 
     with patch("agents.editor.revision_nodes.firestore.AsyncClient", return_value=db), \
-         patch("agents.editor.revision_nodes.get_llm", return_value=mock_llm):
+         patch("agents.editor.revision_nodes.get_llm_with_fallback", return_value=mock_llm):
         result = await check_and_revise_prior_stories(_make_state())
 
     assert result == {}
@@ -179,7 +179,7 @@ async def test_correction_saved_when_llm_detects_contradiction():
     db.collection.return_value.document.return_value.collection.return_value.document.return_value = new_doc_ref
 
     with patch("agents.editor.revision_nodes.firestore.AsyncClient", return_value=db), \
-         patch("agents.editor.revision_nodes.get_llm", return_value=mock_llm), \
+         patch("agents.editor.revision_nodes.get_llm_with_fallback", return_value=mock_llm), \
          patch("agents.editor.revision_nodes.log_action", new=AsyncMock()), \
          patch("agents.editor.revision_nodes.emit"):
         result = await check_and_revise_prior_stories(_make_state())
@@ -201,7 +201,7 @@ async def test_llm_failure_returns_empty_gracefully():
     mock_llm.ainvoke = AsyncMock(side_effect=Exception("LLM timeout"))
 
     with patch("agents.editor.revision_nodes.firestore.AsyncClient", return_value=db), \
-         patch("agents.editor.revision_nodes.get_llm", return_value=mock_llm):
+         patch("agents.editor.revision_nodes.get_llm_with_fallback", return_value=mock_llm):
         result = await check_and_revise_prior_stories(_make_state())
 
     assert result == {}
@@ -243,7 +243,7 @@ async def test_revisions_capped_at_max():
     db.collection.return_value.document.return_value.collection.return_value.document.return_value = new_doc_ref
 
     with patch("agents.editor.revision_nodes.firestore.AsyncClient", return_value=db), \
-         patch("agents.editor.revision_nodes.get_llm", return_value=mock_llm), \
+         patch("agents.editor.revision_nodes.get_llm_with_fallback", return_value=mock_llm), \
          patch("agents.editor.revision_nodes.log_action", new=AsyncMock()), \
          patch("agents.editor.revision_nodes.emit"):
         await check_and_revise_prior_stories(_make_state())

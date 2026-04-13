@@ -108,7 +108,7 @@ async def test_low_credibility_triggers_followup():
 
     with patch("agents.editor.quality_nodes.firestore.AsyncClient", return_value=db), \
          patch("agents.editor.quality_nodes.log_action", new=AsyncMock()), \
-         patch("agents.editor.quality_nodes.get_llm", return_value=mock_llm), \
+         patch("agents.editor.quality_nodes.get_llm_with_fallback", return_value=mock_llm), \
          patch("agents.editor.quality_nodes.emit"):
         result = await assess_evidence_quality(state)
 
@@ -133,7 +133,7 @@ async def test_missing_evidence_triggers_followup():
 
     with patch("agents.editor.quality_nodes.firestore.AsyncClient", return_value=db), \
          patch("agents.editor.quality_nodes.log_action", new=AsyncMock()), \
-         patch("agents.editor.quality_nodes.get_llm", return_value=mock_llm), \
+         patch("agents.editor.quality_nodes.get_llm_with_fallback", return_value=mock_llm), \
          patch("agents.editor.quality_nodes.emit"):
         result = await assess_evidence_quality(state)
 

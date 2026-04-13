@@ -85,7 +85,7 @@ async def test_drafter_returns_drafts_on_success():
         MagicMock(content="Dear UN Secretariat,\n\nI hereby request voting records...\n\nRespectfully,\nThe Glass Record"),
     ])
 
-    with patch("tools.records_requests.drafter.get_llm", return_value=mock_llm):
+    with patch("tools.records_requests.drafter.get_llm_with_fallback", return_value=mock_llm):
         drafts = await draft_records_requests(
             story_title="Security Council Reform Stalled",
             sub_questions=["Which countries blocked reform?"],
@@ -108,7 +108,7 @@ async def test_drafter_returns_empty_on_llm_failure():
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(side_effect=Exception("LLM unavailable"))
 
-    with patch("tools.records_requests.drafter.get_llm", return_value=mock_llm):
+    with patch("tools.records_requests.drafter.get_llm_with_fallback", return_value=mock_llm):
         drafts = await draft_records_requests(
             story_title="Test",
             sub_questions=[],
@@ -142,7 +142,7 @@ async def test_drafter_caps_at_max_requests():
     mock_llm = MagicMock()
     mock_llm.ainvoke = AsyncMock(side_effect=side_effect)
 
-    with patch("tools.records_requests.drafter.get_llm", return_value=mock_llm):
+    with patch("tools.records_requests.drafter.get_llm_with_fallback", return_value=mock_llm):
         drafts = await draft_records_requests(
             story_title="Test",
             sub_questions=[],

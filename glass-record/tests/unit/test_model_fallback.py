@@ -14,6 +14,14 @@ for mod in [
 import pytest  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _fresh_gemini_module():
+    """Pop any cached stub for agents.shared.gemini before each test so the real module loads."""
+    sys.modules.pop("agents.shared.gemini", None)
+    yield
+    sys.modules.pop("agents.shared.gemini", None)
+
+
 # ---------------------------------------------------------------------------
 # Settings tests
 # ---------------------------------------------------------------------------
