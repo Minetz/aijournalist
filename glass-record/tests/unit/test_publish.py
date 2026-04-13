@@ -1,7 +1,19 @@
-import pytest
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agents.shared.state import EditorState, JournalistConfig
+# Stub out google-cloud and other transitive deps before any module-under-test is imported
+for mod in [
+    "google", "google.cloud", "google.cloud.firestore",
+    "langchain_core", "langchain_core.messages",
+    "agents.editor.events", "agents.editor.publish_prompts",
+    "agents.legal_tree", "agents.legal_tree.nodes",
+    "agents.legal_tree.prompts",
+    "agents.shared.base_agent", "agents.shared.gemini",
+]:
+    sys.modules.setdefault(mod, MagicMock())
+
+import pytest  # noqa: E402
+from agents.shared.state import EditorState, JournalistConfig  # noqa: E402
 
 
 def _make_state(compliance_passed: bool = True) -> EditorState:
@@ -59,6 +71,7 @@ async def test_publish_stores_to_firestore(mock_firestore_client):
         patch("agents.editor.publish_nodes._fetch_evidence_summary",
               AsyncMock(return_value=("Evidence item 1: credibility 0.9", []))),
         patch("agents.editor.publish_nodes._extract_and_store_timeline", AsyncMock()),
+        patch("agents.editor.publish_nodes.log_action", new=AsyncMock()),
         patch("agents.editor.publish_nodes.get_llm") as mock_get_llm,
     ):
         mock_llm = MagicMock()

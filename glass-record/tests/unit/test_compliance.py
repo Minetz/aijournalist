@@ -1,7 +1,17 @@
-import pytest
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from agents.shared.state import ComplianceState, JournalistConfig
+# Stub out google-cloud and other transitive deps before any module-under-test is imported
+for mod in [
+    "google", "google.cloud", "google.cloud.firestore",
+    "langchain_core", "langchain_core.messages",
+    "agents.shared.base_agent", "agents.shared.gemini",
+    "agents.compliance.prompts",
+]:
+    sys.modules.setdefault(mod, MagicMock())
+
+import pytest  # noqa: E402
+from agents.shared.state import ComplianceState, JournalistConfig  # noqa: E402
 
 
 def _make_state(story: str = "UN veto blocks humanitarian aid resolution",
@@ -35,6 +45,7 @@ async def test_injection_scan_passes_clean_input(mock_firestore_client):
 
     with (
         patch("agents.compliance.nodes.firestore.AsyncClient", return_value=mock_firestore_client),
+        patch("agents.compliance.nodes.log_action", new=AsyncMock()),
         patch("agents.compliance.nodes.get_llm") as mock_get_llm,
     ):
         mock_llm = MagicMock()
@@ -61,6 +72,7 @@ async def test_injection_scan_blocks_injected_input(mock_firestore_client):
 
     with (
         patch("agents.compliance.nodes.firestore.AsyncClient", return_value=mock_firestore_client),
+        patch("agents.compliance.nodes.log_action", new=AsyncMock()),
         patch("agents.compliance.nodes.get_llm") as mock_get_llm,
     ):
         mock_llm = MagicMock()
@@ -97,6 +109,7 @@ async def test_mandate_drift_passes_aligned_story(mock_firestore_client):
             "mandate": "Investigate human rights implications of UN Security Council decisions.",
             "jurisdiction": "UN",
         })),
+        patch("agents.compliance.nodes.log_action", new=AsyncMock()),
         patch("agents.compliance.nodes.get_llm") as mock_get_llm,
     ):
         mock_llm = MagicMock()
